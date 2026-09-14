@@ -119,7 +119,7 @@ Prerequisites: a working [Frappe bench](https://frappeframework.com/docs/user/en
 
 ```bash
 # from your bench directory
-bench get-app https://github.com/mithtech-is/Pulse.git
+bench get-app https://github.com/sabuto/Pulse.git
 bench --site your-site install-app pulse
 ```
 
