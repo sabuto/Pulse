@@ -106,6 +106,28 @@ def _publish_board(project=None):
 # Pulse-only user got "Insufficient Permission" or silently empty lists. These are
 # scoped to the user's projects (utils/scope.py) and need only a Pulse role.
 
+def release_apps():
+    """The apps a release can relate to, from Pulse Settings (set up on migrate)."""
+    rows = frappe.get_all("Pulse Release App", filters={"parent": "Pulse Settings",
+                          "parenttype": "Pulse Settings"}, fields=["app_name"], order_by="idx asc")
+    return [r.app_name.strip() for r in rows if (r.app_name or "").strip()]
+
+
+def _clean_release_app(value):
+    """'' clears it; anything else must be one of the configured apps."""
+    value = (value or "").strip()
+    if value and value not in release_apps():
+        frappe.throw(_("{0} is not one of the apps set up in Pulse Settings.").format(value))
+    return value or None
+
+
+@frappe.whitelist()
+@pulse_access_required
+def get_release_apps():
+    """App names for the Release dropdown and the Releases page."""
+    return release_apps()
+
+
 @frappe.whitelist()
 @pulse_access_required
 def get_task_types():
@@ -367,6 +389,7 @@ def get_task(task):
         "priority": doc.priority, "task_type": doc.get("type"), "project": doc.project,
         "pulse_sprint": doc.pulse_sprint,
         "pulse_epic": doc.get("pulse_epic"), "pulse_release": doc.get("pulse_release"),
+        "pulse_release_app": doc.get("pulse_release_app"),
         "exp_start_date": doc.exp_start_date, "exp_end_date": doc.exp_end_date,
         "resolution": doc.get("pulse_resolution"),
         "can_comment": can_comment(doc.name),
@@ -454,11 +477,14 @@ def update_task(task, **fields):
     allowed = {
         "subject", "description", "priority", "task_type",
         "exp_start_date", "exp_end_date", "project",
-        "pulse_sprint", "pulse_epic", "pulse_release", "pulse_resolution",
+        "pulse_sprint", "pulse_epic", "pulse_release", "pulse_release_app",
+        "pulse_resolution",
     }
     doc = frappe.get_doc("Task", task)
     for k, v in fields.items():
         if k in allowed:
+            if k == "pulse_release_app":
+                v = _clean_release_app(v)
             doc.set("type" if k == "task_type" else k, v)
     doc.save()
     frappe.db.commit()

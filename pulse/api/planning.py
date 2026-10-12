@@ -61,17 +61,27 @@ def epic_options(project=None):
 
 @frappe.whitelist()
 @pulse_access_required
-def list_releases(project=None):
-    """Distinct release tags with task-count progress."""
+def list_releases(project=None, app=None):
+    """Releases (an app + a release tag) with task-count progress.
+
+    `app` limits the list to one app; pass "none" for releases with no app. A release is
+    the pair, so the same tag under two apps is two releases.
+    """
     cond, args = scope_sql("project", requested=project)
+    if app == "none":
+        cond += " AND IFNULL(pulse_release_app, '') = ''"
+    elif app:
+        cond += " AND pulse_release_app = %(app)s"
+        args["app"] = app
     rows = frappe.db.sql(
-        f"""SELECT pulse_release AS release_name,
+        f"""SELECT IFNULL(pulse_release_app, '') AS app,
+                   pulse_release AS release_name,
                    COUNT(*) AS total,
                    SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) AS done
             FROM `tabTask`
             WHERE IFNULL(pulse_release, '') != ''{cond}
-            GROUP BY pulse_release
-            ORDER BY pulse_release ASC""",
+            GROUP BY IFNULL(pulse_release_app, ''), pulse_release
+            ORDER BY app ASC, pulse_release ASC""",
         args, as_dict=True,
     )
     for r in rows:
@@ -84,10 +94,14 @@ def list_releases(project=None):
 
 @frappe.whitelist()
 @pulse_access_required
-def release_tasks(release, project=None):
+def release_tasks(release, project=None, app=None):
     filters = {"pulse_release": release}
     if project:
         filters["project"] = project
+    if app == "none":
+        filters["pulse_release_app"] = ["is", "not set"]
+    elif app:
+        filters["pulse_release_app"] = app
     return frappe.get_all("Task", filters=scope_filters(filters), fields=TASK_FIELDS,
                           order_by="workflow_state asc, modified desc",
                           limit_page_length=0)

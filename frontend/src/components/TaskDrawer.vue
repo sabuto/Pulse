@@ -33,8 +33,8 @@
             </label>
           </div>
 
-          <!-- Epic + Release -->
-          <div class="grid grid-cols-2 gap-3 mt-3 text-sm">
+          <!-- Epic + App + Release -->
+          <div class="grid grid-cols-3 gap-3 mt-3 text-sm">
             <label class="block">
               <span class="text-xs text-muted">Epic</span>
               <select v-model="task.pulse_epic" @change="save('pulse_epic', task.pulse_epic)" :disabled="!canWrite" class="field">
@@ -45,11 +45,18 @@
               </select>
             </label>
             <label class="block">
+              <span class="text-xs text-muted">App</span>
+              <select v-model="task.pulse_release_app" @change="save('pulse_release_app', task.pulse_release_app || '')" :disabled="!canWrite" class="field">
+                <option :value="null">— none —</option>
+                <option v-for="a in appOptions" :key="a" :value="a">{{ a }}</option>
+              </select>
+            </label>
+            <label class="block">
               <span class="text-xs text-muted">Release</span>
               <input v-model="task.pulse_release" list="pulse-releases" placeholder="e.g. v1.2"
                 @change="save('pulse_release', task.pulse_release)" :readonly="!canWrite" class="field" />
               <datalist id="pulse-releases">
-                <option v-for="r in releases" :key="r.release_name" :value="r.release_name" />
+                <option v-for="name in releaseSuggestions" :key="name" :value="name" />
               </datalist>
             </label>
           </div>
@@ -276,6 +283,18 @@ const attachments = ref([])
 const uploading = ref(false)
 const epics = ref([])
 const releases = ref([])
+const releaseApps = ref([])
+
+// Apps from Pulse Settings, plus this task's own if it has since been removed from the list.
+const appOptions = computed(() => {
+  const cur = task.value?.pulse_release_app
+  return cur && !releaseApps.value.includes(cur) ? [...releaseApps.value, cur] : releaseApps.value
+})
+// Existing release tags for the chosen app (a tag belongs to an app).
+const releaseSuggestions = computed(() => {
+  const app = task.value?.pulse_release_app || ''
+  return [...new Set(releases.value.filter((r) => (r.app || '') === app).map((r) => r.release_name))]
+})
 
 const doneSubs = computed(() => (task.value?.subtasks || []).filter((s) => s.status === 'Completed').length)
 const subPct = computed(() => task.value?.subtasks?.length ? Math.round((doneSubs.value / task.value.subtasks.length) * 100) : 0)
@@ -337,6 +356,7 @@ watch(() => props.taskId, async (id) => {
   // epic choices are project-scoped; releases are free-text suggestions
   epics.value = await call('pulse.api.planning.epic_options', { project: t.project }).catch(() => [])
   releases.value = await call('pulse.api.planning.list_releases').catch(() => [])
+  releaseApps.value = await call('pulse.api.spa.get_release_apps').catch(() => [])
 })
 
 async function save(field, value) {

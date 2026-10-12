@@ -13,6 +13,8 @@
   "assignment_section",
   "enable_hierarchical_assignment",
   "role_ranks",
+  "releases_section",
+  "release_apps",
   "notifications_section",
   "email_notifications",
   "ntfy_section",
@@ -70,6 +72,18 @@
    "fieldtype": "Table",
    "label": "Role Ranks",
    "options": "Pulse Role Rank"
+  },
+  {
+   "fieldname": "releases_section",
+   "fieldtype": "Section Break",
+   "label": "Releases"
+  },
+  {
+   "description": "The apps a release can relate to. Shown as an App dropdown next to Release in a task, and used to group the Releases page.",
+   "fieldname": "release_apps",
+   "fieldtype": "Table",
+   "label": "Apps",
+   "options": "Pulse Release App"
   },
   {
    "fieldname": "notifications_section",

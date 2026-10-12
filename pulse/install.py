@@ -10,6 +10,7 @@ def after_install():
     create_workflow_states()
     create_workflow_action_masters()
     seed_role_ranks()
+    seed_release_apps()
     create_pulse_launcher_workspace()
 
 
@@ -27,6 +28,7 @@ def after_migrate():
     create_workflow_states()
     create_workflow_action_masters()
     seed_role_ranks()
+    seed_release_apps()
     backfill_issue_keys()
     create_pulse_launcher_workspace()
     # Legacy Desk dashboard-charts / number-cards / workspace builders were retired
@@ -102,6 +104,18 @@ def seed_role_ranks():
     for role_name, rank in ranks:
         if frappe.db.exists("Role", role_name):
             settings.append("role_ranks", {"role": role_name, "rank": rank})
+    settings.save(ignore_permissions=True)
+
+
+def seed_release_apps():
+    """Start the app list (releases / bugs) with the two apps in use; edit it in Pulse Settings."""
+    if not frappe.db.exists("DocType", "Pulse Settings"):
+        return
+    settings = frappe.get_single("Pulse Settings")
+    if settings.release_apps:
+        return
+    for app in ("customer_due_dates", "posawesome"):
+        settings.append("release_apps", {"app_name": app})
     settings.save(ignore_permissions=True)
 
 

@@ -37,8 +37,10 @@ CUSTOM_FIELDS = {
          "insert_after": "pulse_epic"},
         {"fieldname": "pulse_release", "label": "Release", "fieldtype": "Data",
          "insert_after": "pulse_rank"},
+        {"fieldname": "pulse_release_app", "label": "Release App", "fieldtype": "Data",
+         "insert_after": "pulse_release"},
         {"fieldname": "pulse_recurring", "label": "Recurring Template", "fieldtype": "Link",
-         "options": "Pulse Recurring Task", "read_only": 1, "insert_after": "pulse_release"},
+         "options": "Pulse Recurring Task", "read_only": 1, "insert_after": "pulse_release_app"},
         # "What was done", optionally typed when a card is moved to Done; goes in the
         # completion email.
         {"fieldname": "pulse_resolution", "label": "Resolution", "fieldtype": "Small Text",
