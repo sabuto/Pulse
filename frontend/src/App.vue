@@ -10,7 +10,7 @@
         </div>
       </div>
 
-      <div class="px-2.5 pt-3">
+      <div v-if="canWrite" class="px-2.5 pt-3">
         <button @click="openCreate()" class="new-btn w-full flex items-center justify-center gap-2 py-2.5 text-[13px] font-semibold">
           <Plus class="w-4 h-4" /> New task
         </button>
@@ -74,6 +74,9 @@ import { openCreate } from './ui/create'
 import Avatar from './ui/Avatar.vue'
 import Toaster from './ui/Toaster.vue'
 import CreateIssueModal from './components/CreateIssueModal.vue'
+
+// Pulse Viewer is read-only; the server enforces it, this just hides the controls.
+const canWrite = window.can_write !== false
 import EntityForm from './components/EntityForm.vue'
 import Plus from '~icons/lucide/plus'
 import House from '~icons/lucide/house'

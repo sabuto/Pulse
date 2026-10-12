@@ -2,7 +2,7 @@
   <transition name="slide">
     <div v-if="taskId" class="fixed inset-0 z-40 flex justify-end" @click.self="$emit('close')">
       <div class="absolute inset-0 bg-black/40" />
-      <aside class="relative w-[460px] max-w-full h-full bg-surface text-app border-l border-app shadow-2xl overflow-y-auto">
+      <aside class="relative w-[800px] max-w-full h-full bg-surface text-app border-l border-app shadow-2xl overflow-y-auto">
         <div v-if="task" class="p-5">
           <div class="flex items-center justify-between">
             <span class="text-xs font-mono px-2 py-0.5 rounded bg-surface-2 text-accent">{{ task.issue_key || task.name }}</span>
@@ -54,7 +54,28 @@
 
           <div class="mt-4">
             <span class="text-xs text-muted">Description</span>
-            <textarea v-model="task.description" @change="save('description', task.description)" rows="3" class="field" />
+            <RichText :key="task.name" v-model="task.description" :task-name="task.name"
+              placeholder="Add a description — paste images straight in"
+              @commit="save('description', task.description)" />
+          </div>
+
+          <!-- Bug report details (only on tasks raised via Report Bug) -->
+          <div v-if="task.bug" class="mt-4 rounded-md border border-app bg-surface-2 p-3">
+            <div class="text-xs font-semibold text-muted mb-2">Bug report</div>
+            <dl class="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1 text-sm">
+              <template v-for="row in bugRows" :key="row.label">
+                <dt class="text-muted">{{ row.label }}</dt>
+                <dd class="break-words">
+                  <a v-if="row.href" :href="row.href" target="_blank" rel="noopener noreferrer"
+                    class="text-accent hover:underline">{{ row.value }}</a>
+                  <template v-else>{{ row.value }}</template>
+                </dd>
+              </template>
+            </dl>
+            <div v-for="blk in bugTexts" :key="blk.label" class="mt-3">
+              <div class="text-xs text-muted">{{ blk.label }}</div>
+              <div class="text-sm whitespace-pre-wrap break-words">{{ blk.value }}</div>
+            </div>
           </div>
 
           <!-- Assignees -->
@@ -170,12 +191,15 @@
           <div class="mt-5">
             <div class="text-xs text-muted mb-1">Comments</div>
             <div v-for="c in task.comments" :key="c.name" class="text-sm border-l-2 border-app pl-2 py-1">
-              <div class="text-app">{{ c.comment_text }}</div>
+              <div class="text-app rt-content break-words" v-html="toHtml(c.comment_text)" />
               <div class="text-[10px] text-muted">{{ c.owner }}</div>
             </div>
             <div class="flex gap-2 mt-1">
-              <input v-model="newComment" @keyup.enter="postComment" placeholder="Write a comment..." class="field flex-1" />
-              <button class="btn" @click="postComment">Send</button>
+              <div class="flex-1 min-w-0" @keydown.ctrl.enter="postComment" @keydown.meta.enter="postComment">
+                <RichText :key="`c-${task.name}-${commentKey}`" v-model="newComment" :task-name="task.name" compact
+                  placeholder="Write a comment — paste images straight in (Ctrl+Enter to send)" />
+              </div>
+              <button class="btn self-start" @click="postComment">Send</button>
             </div>
           </div>
         </div>
@@ -190,6 +214,9 @@ import { ref, computed, watch } from 'vue'
 import { call } from 'frappe-ui'
 import { toast } from '@/ui/toast'
 import StatusPill from '@/ui/StatusPill.vue'
+import RichText from '@/components/RichText.vue'
+import { toHtml, isEmptyHtml } from '@/utils/richtext'
+import { deskUrl } from '@/utils/desk'
 import X from '~icons/lucide/x'
 import Paperclip from '~icons/lucide/paperclip'
 
@@ -197,10 +224,33 @@ const props = defineProps({ taskId: { type: String, default: null } })
 const emit = defineEmits(['close', 'changed', 'open'])
 
 const task = ref(null)
+
+const bugRows = computed(() => {
+  const b = task.value?.bug || {}
+  const record = b.ref_doctype ? (b.ref_name ? `${b.ref_doctype} ${b.ref_name}` : b.ref_doctype) : ''
+  return [
+    { label: 'Reported by', value: b.reported_by },
+    { label: 'Environment', value: b.environment },
+    { label: 'Module', value: b.module },
+    { label: 'Page', value: b.page, href: deskUrl(b.page) },
+    { label: 'Record', value: record },
+    { label: 'App version', value: b.app_version },
+  ].filter((r) => r.value)
+})
+
+const bugTexts = computed(() => {
+  const b = task.value?.bug || {}
+  return [
+    { label: 'Steps to reproduce', value: b.steps },
+    { label: 'Expected result', value: b.expected },
+    { label: 'Actual result', value: b.actual },
+  ].filter((r) => r.value)
+})
 const assignable = ref([])
 const issueTypes = ref([])
 const newCheck = ref('')
 const newComment = ref('')
+const commentKey = ref(0)
 const newSub = ref('')
 const depQ = ref('')
 const depResults = ref([])
@@ -306,10 +356,11 @@ async function toggleCheck(c) {
   c.is_done = c.is_done ? 0 : 1
 }
 async function postComment() {
-  if (!newComment.value) return
+  if (isEmptyHtml(newComment.value)) return
   const r = await call('pulse.api.spa.add_comment', { task: props.taskId, text: newComment.value })
   task.value.comments.push(r)
   newComment.value = ''
+  commentKey.value++
 }
 async function addSub() {
   if (!newSub.value.trim()) return

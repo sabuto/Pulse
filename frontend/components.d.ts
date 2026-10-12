@@ -14,6 +14,7 @@ declare module 'vue' {
     Donut: typeof import('./src/components/charts/Donut.vue')['default']
     EntityForm: typeof import('./src/components/EntityForm.vue')['default']
     Gauge: typeof import('./src/components/charts/Gauge.vue')['default']
+    RichText: typeof import('./src/components/RichText.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     TaskDrawer: typeof import('./src/components/TaskDrawer.vue')['default']

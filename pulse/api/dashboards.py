@@ -11,6 +11,8 @@ import json
 from datetime import datetime, timedelta
 
 import frappe
+from pulse.utils.scope import scope_filters, scope_sql
+from pulse.utils.access import pulse_access_required, pulse_write_required
 from frappe import _
 from frappe.utils import today
 
@@ -86,6 +88,7 @@ def _find_default_template():
 
 
 @frappe.whitelist()
+@pulse_access_required
 def get_my_dashboard():
     """Return the current user's personal dashboard, creating it on first use."""
     user = frappe.session.user
@@ -107,12 +110,14 @@ def get_my_dashboard():
         "scope": "Personal",
         "widgets": widgets,
     })
+    frappe.has_permission("Pulse Dashboard", "create", throw=True)
     doc.flags.ignore_permissions = True
     doc.insert(ignore_permissions=True)
     return _serialize(doc)
 
 
 @frappe.whitelist()
+@pulse_access_required
 def save_dashboard(widgets=None, layout_json=None, dashboard_name=None):
     """Persist the current user's dashboard layout (widgets + positions)."""
     user = frappe.session.user
@@ -146,6 +151,7 @@ def save_dashboard(widgets=None, layout_json=None, dashboard_name=None):
             "color": w.get("color"),
             "filters_json": w.get("filters_json"), "config_json": w.get("config_json"),
         })
+    frappe.has_permission("Pulse Dashboard", "write", throw=True)
     doc.flags.ignore_permissions = True
     doc.save(ignore_permissions=True)
     frappe.db.commit()
@@ -153,6 +159,7 @@ def save_dashboard(widgets=None, layout_json=None, dashboard_name=None):
 
 
 @frappe.whitelist()
+@pulse_access_required
 def reset_dashboard():
     """Delete the user's personal dashboard so it re-seeds from the default template."""
     user = frappe.session.user
@@ -160,18 +167,21 @@ def reset_dashboard():
         "Pulse Dashboard", {"owner_user": user, "scope": "Personal"}, "name"
     )
     if name:
+        frappe.has_permission("Pulse Dashboard", "delete", name, throw=True)
         frappe.delete_doc("Pulse Dashboard", name, ignore_permissions=True, force=True)
         frappe.db.commit()
     return get_my_dashboard()
 
 
 @frappe.whitelist()
+@pulse_access_required
 def get_widget_catalog():
     """Return the palette of widget types + their available metrics."""
     return WIDGET_CATALOG
 
 
 @frappe.whitelist()
+@pulse_access_required
 def get_dashboard_stats(user=None):
     """KPI stats for dashboard number cards (standalone Pulse data)."""
     user = user or frappe.session.user
@@ -181,13 +191,16 @@ def get_dashboard_stats(user=None):
     roles = frappe.get_roles(user)
     limited = "Pulse Admin" not in roles and "Pulse Manager" not in roles
 
+    # Scope always follows the signed-in user, never the `user` argument.
+    scope_cond, scope_args = scope_sql("project")
+
     def assign_sql(where):
         if not has_assign:
             return 0
-        clause = " AND JSON_CONTAINS(_assign, %s)" if limited else ""
-        params = (json.dumps(user),) if limited else ()
+        clause = " AND JSON_CONTAINS(_assign, %(assignee)s)" if limited else ""
+        params = {**scope_args, **({"assignee": json.dumps(user)} if limited else {})}
         return frappe.db.sql(
-            f"SELECT COUNT(*) FROM `tabTask` WHERE {where}{clause}", params
+            f"SELECT COUNT(*) FROM `tabTask` WHERE {where}{clause}{scope_cond}", params
         )[0][0]
 
     my_tasks = assign_sql("status NOT IN ('Completed','Cancelled')")
@@ -195,13 +208,15 @@ def get_dashboard_stats(user=None):
     overdue = assign_sql(f"exp_end_date < '{today_str}' AND status NOT IN ('Completed','Cancelled')")
     due_today = assign_sql(f"exp_end_date = '{today_str}' AND status NOT IN ('Completed','Cancelled')")
 
-    completed_today = frappe.db.count("Task", {
+    completed_today = frappe.db.count("Task", scope_filters({
         "status": "Completed", "modified": [">=", today_str + " 00:00:00"],
-    })
-    active_projects = frappe.db.count("Project", {"status": "Open"})
-    total_open = frappe.db.count("Task", {"status": ["not in", ["Completed", "Cancelled"]]})
+    }))
+    active_projects = frappe.db.count("Project", scope_filters({"status": "Open"}, field="name"))
+    total_open = frappe.db.count(
+        "Task", scope_filters({"status": ["not in", ["Completed", "Cancelled"]]}))
     blocked = frappe.db.sql(
-        "SELECT COUNT(*) FROM `tabTask` WHERE workflow_state='In Review' AND DATEDIFF(NOW(), modified) > 5"
+        "SELECT COUNT(*) FROM `tabTask` WHERE workflow_state='In Review' "
+        f"AND DATEDIFF(NOW(), modified) > 5{scope_cond}", scope_args
     )[0][0]
 
     week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
@@ -223,13 +238,17 @@ def get_dashboard_stats(user=None):
 
 
 @frappe.whitelist()
+@pulse_access_required
 def get_dashboard_series():
     """Real aggregate series for chart widgets (tasks by state/type, workload, velocity)."""
+    scope_cond, scope_args = scope_sql("project")
+
     def group_count(field):
         rows = frappe.db.sql(
             f"""SELECT `{field}` AS k, COUNT(name) AS c
-                FROM `tabTask` WHERE `{field}` IS NOT NULL AND `{field}` != ''
+                FROM `tabTask` WHERE `{field}` IS NOT NULL AND `{field}` != ''{scope_cond}
                 GROUP BY `{field}` ORDER BY c DESC""",
+            scope_args,
             as_dict=True,
         )
         return [{"label": r.k, "value": r.c} for r in rows]
@@ -237,7 +256,8 @@ def get_dashboard_series():
     # workload = open task count per assignee (from _assign)
     workload = {}
     for a in frappe.db.get_all("Task",
-                               filters={"status": ["not in", ["Completed", "Cancelled"]]},
+                               filters=scope_filters(
+                                   {"status": ["not in", ["Completed", "Cancelled"]]}),
                                fields=["_assign"]):
         for u in (frappe.parse_json(a._assign or "[]") or []):
             workload[u] = workload.get(u, 0) + 1
@@ -248,7 +268,8 @@ def get_dashboard_series():
 
     # velocity = number of tasks completed per sprint
     velocity = []
-    for s in frappe.db.get_all("Pulse Sprint", fields=["name", "sprint_name"],
+    for s in frappe.db.get_all("Pulse Sprint", filters=scope_filters({}),
+                               fields=["name", "sprint_name"],
                                order_by="start_date asc"):
         done = frappe.db.count("Task", {"pulse_sprint": s.name, "status": "Completed"})
         velocity.append({"label": s.sprint_name or s.name, "value": float(done or 0)})
@@ -262,6 +283,7 @@ def get_dashboard_series():
 
 
 @frappe.whitelist()
+@pulse_write_required
 def set_default_template(name):
     """Admin/Manager: mark a shared dashboard as the org default template."""
     if not _is_manager(frappe.session.user):

@@ -5,24 +5,29 @@ project counts, weekly throughput, progress, upcoming work and who's on what.
 """
 
 import frappe
+from pulse.utils.scope import scope_filters, scope_sql
+from pulse.utils.access import pulse_access_required
 from frappe.utils import add_days, getdate, today
 
 OPEN_STATES = ["Completed", "Cancelled"]
 
 
 @frappe.whitelist()
+@pulse_access_required
 def summary():
-    projects = frappe.get_all("Project", fields=["name", "project_name", "status",
-                                                 "expected_end_date", "pulse_project_key"],
+    projects = frappe.get_all("Project", filters=scope_filters({}, field="name"),
+                              fields=["name", "project_name", "status",
+                                      "expected_end_date", "pulse_project_key"],
                               order_by="modified desc", limit_page_length=0)
     total = len(projects)
     ended = sum(1 for p in projects if p.status == "Completed")
     running = sum(1 for p in projects if p.status == "Open")
     pending = sum(1 for p in projects if p.status == "Cancelled")
 
-    tasks = frappe.get_all("Task", fields=["name", "status", "workflow_state", "_assign",
-                                           "subject", "issue_key", "project", "exp_end_date",
-                                           "modified"],
+    tasks = frappe.get_all("Task", filters=scope_filters({}),
+                           fields=["name", "status", "workflow_state", "_assign",
+                                   "subject", "issue_key", "project", "exp_end_date",
+                                   "modified"],
                            limit_page_length=0)
     done = sum(1 for t in tasks if t.status == "Completed")
     in_progress = sum(1 for t in tasks if t.workflow_state == "In Progress")
@@ -33,7 +38,7 @@ def summary():
     start = getdate(add_days(today(), -6))
     logs = frappe.get_all(
         "Pulse Task Status Log",
-        filters={"to_state": "Done", "changed_on": [">=", start]},
+        filters=scope_filters({"to_state": "Done", "changed_on": [">=", start]}),
         fields=["task", "changed_on"],
     )
     seen = set()
@@ -84,9 +89,11 @@ def summary():
 
     # hours tracked this week (from Super Productivity sync)
     week_start = add_days(today(), -getdate(today()).weekday())
+    hour_cond, hour_args = scope_sql("project")
     hours = frappe.db.sql(
-        """SELECT COALESCE(SUM(hours), 0) FROM `tabPulse Timesheet Entry`
-           WHERE date >= %s""", (week_start,))[0][0]
+        f"""SELECT COALESCE(SUM(hours), 0) FROM `tabPulse Timesheet Entry`
+            WHERE date >= %(week_start)s{hour_cond}""",
+        {"week_start": week_start, **hour_args})[0][0]
 
     return {
         "projects": {"total": total, "ended": ended, "running": running, "pending": pending},

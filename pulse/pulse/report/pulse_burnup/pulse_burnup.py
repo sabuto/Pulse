@@ -4,6 +4,7 @@ Pulse does not use story points, so each task counts as 1.
 """
 
 import frappe
+from pulse.utils.scope import require_project_view
 from frappe import _
 from frappe.utils import add_days, getdate
 
@@ -21,6 +22,7 @@ def execute(filters=None):
         return [], []
 
     sprint = frappe.get_doc("Pulse Sprint", sprint_name)
+    require_project_view(sprint.get("project"))
     if not sprint.start_date or not sprint.end_date:
         return [], []
 

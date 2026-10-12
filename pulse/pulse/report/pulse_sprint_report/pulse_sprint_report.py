@@ -1,6 +1,7 @@
 """Sprint report, measured in TASK COUNT (Pulse does not use story points)."""
 
 import frappe
+from pulse.utils.scope import require_project_view
 from frappe import _
 from frappe.utils import getdate
 
@@ -12,6 +13,7 @@ def execute(filters=None):
         return [], []
 
     sprint = frappe.get_doc("Pulse Sprint", sprint_name)
+    require_project_view(sprint.get("project"))
     start = getdate(sprint.start_date) if sprint.start_date else None
     end = getdate(sprint.end_date) if sprint.end_date else None
 

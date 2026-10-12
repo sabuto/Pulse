@@ -1,4 +1,7 @@
 import frappe
+from frappe import _
+
+from pulse.utils.access import has_pulse_access, has_pulse_write
 
 no_cache = 1
 
@@ -14,11 +17,16 @@ def get_context(context):
         frappe.local.flags.redirect_location = "/login?redirect-to=/pulse"
         raise frappe.Redirect
 
+    # Logged in but without any Pulse role -> no access to the SPA.
+    if not has_pulse_access():
+        frappe.throw(_("You do not have permission to use Pulse."), frappe.PermissionError)
+
     context.no_cache = 1
     context.boot = {
         "csrf_token": frappe.sessions.get_csrf_token(),
         "sitename": frappe.local.site,
         "user": frappe.session.user,
+        "can_write": has_pulse_write(),
         # realtime: the SPA connects to socket.io on this port, in a namespace
         # named after the site (Frappe's socketio rejects any other namespace).
         "socketio_port": frappe.conf.get("socketio_port") or 9000,

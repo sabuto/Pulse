@@ -6,6 +6,7 @@ Pulse does not use story points; hours come from Pulse Timesheet Entry.
 import json
 
 import frappe
+from pulse.utils.scope import scope_sql
 from frappe import _
 
 
@@ -21,6 +22,7 @@ def execute(filters=None):
         )
 
     conditions = ["1=1"]
+    scope_cond, scope_args = scope_sql("`tabTask`.`project`", requested=project)
     if project:
         conditions.append("`tabTask`.`project` = %(project)s")
     if sprint:
@@ -33,9 +35,9 @@ def execute(filters=None):
         SELECT `tabTask`.`name`, `tabTask`.`_assign`, `tabTask`.`subject`,
                `tabTask`.`status`, `tabTask`.`pulse_sprint`
         FROM `tabTask`
-        WHERE {" AND ".join(conditions)}
+        WHERE {" AND ".join(conditions)}{scope_cond}
         """,
-        {"project": project, "sprint": sprint},
+        {"project": project, "sprint": sprint, **scope_args},
         as_dict=True,
     )
 

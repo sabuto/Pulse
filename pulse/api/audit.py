@@ -5,6 +5,8 @@ Status Log. `log()` is a helper other endpoints call to record actions live.
 """
 
 import frappe
+from pulse.utils.scope import scope_filters
+from pulse.utils.access import pulse_access_required
 from frappe.utils import now_datetime
 
 
@@ -22,12 +24,17 @@ def log(activity_type, reference_doctype=None, reference_name=None,
             "description": description,
         })
         doc.flags.ignore_permissions = True
+        # reference_name is often the issue key (e.g. EB-2), not the Task's real name,
+        # so the dynamic link can't be validated. Without this the insert fails, and
+        # the Desk shows the queued validation message as a popup.
+        doc.flags.ignore_links = True
         doc.insert(ignore_permissions=True)
     except Exception:
         frappe.log_error(title="Pulse audit log failed", message=frappe.get_traceback())
 
 
 @frappe.whitelist()
+@pulse_access_required
 def get_audit_log(limit=150, project=None, user=None):
     """Unified timestamped feed: activity entries + task status transitions."""
     limit = int(limit)
@@ -39,7 +46,7 @@ def get_audit_log(limit=150, project=None, user=None):
     if user:
         act_filters["user"] = user
     for a in frappe.get_all(
-        "Pulse Activity Log", filters=act_filters,
+        "Pulse Activity Log", filters=scope_filters(act_filters),
         fields=["name", "user", "activity_type", "reference_doctype",
                 "reference_name", "project", "description", "creation"],
         order_by="creation desc", limit=limit,
@@ -57,7 +64,7 @@ def get_audit_log(limit=150, project=None, user=None):
     if user:
         st_filters["changed_by"] = user
     for s in frappe.get_all(
-        "Pulse Task Status Log", filters=st_filters,
+        "Pulse Task Status Log", filters=scope_filters(st_filters),
         fields=["task", "project", "from_state", "to_state", "changed_by", "changed_on"],
         order_by="changed_on desc", limit=limit,
     ):

@@ -16,7 +16,7 @@
             <option :value="null">All projects</option>
             <option v-for="p in projects" :key="p.name" :value="p.name">{{ p.project_name || p.name }}</option>
           </select>
-          <button @click="openCreate({ project })" class="btn-primary">
+          <button v-if="canWrite" @click="openCreate({ project })" class="btn-primary">
             <Plus class="w-3.5 h-3.5" /> New task
           </button>
         </div>
@@ -129,6 +129,8 @@ import List from '~icons/lucide/list'
 import Search from '~icons/lucide/search'
 import Plus from '~icons/lucide/plus'
 import X from '~icons/lucide/x'
+
+const canWrite = window.can_write !== false
 
 const route = useRoute()
 const loading = ref(true)

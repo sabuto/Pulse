@@ -1,17 +1,30 @@
 import frappe
 
 
+def _project_sql(table, user, column="project"):
+    """Row-level project condition, '' for users who see every project."""
+    from pulse.utils.access import has_pulse_access
+    from pulse.utils.scope import visible_projects
+
+    # These hooks run for every Task/Sprint query on the site. Users with no Pulse
+    # role keep plain ERPNext behaviour; only Pulse users are scoped by project.
+    if not has_pulse_access(user):
+        return ""
+    projects = visible_projects(user)
+    if projects is None:
+        return ""
+    if not projects:
+        return "1=0"  # a member of no project sees nothing
+    plist = ", ".join(frappe.db.escape(p) for p in projects)
+    return f"`tab{table}`.`{column}` in ({plist})"
+
+
 def task_query_conditions(user=None):
     user = user or frappe.session.user
-    if "Pulse Admin" in frappe.get_roles(user) or "System Manager" in frappe.get_roles(
-        user
-    ):
-        return ""
     conditions = []
-    projects = _allowed_projects(user)
-    if projects is not None:
-        plist = ", ".join(frappe.db.escape(p) for p in projects)
-        conditions.append(f"`tabTask`.`project` in ({plist})")
+    project_cond = _project_sql("Task", user)
+    if project_cond:
+        conditions.append(project_cond)
     top_role = _top_pulse_role(user)
     if top_role in ("Pulse Junior Developer", "Pulse Intern"):
         u = frappe.db.escape(user)
@@ -22,45 +35,16 @@ def task_query_conditions(user=None):
     return " and ".join(conditions)
 
 
+def project_query_conditions(user=None):
+    return _project_sql("Project", user or frappe.session.user, column="name")
+
+
 def sprint_query_conditions(user=None):
-    user = user or frappe.session.user
-    if "Pulse Admin" in frappe.get_roles(user) or "System Manager" in frappe.get_roles(
-        user
-    ):
-        return ""
-    projects = _allowed_projects(user)
-    if projects is not None:
-        plist = ", ".join(frappe.db.escape(p) for p in projects)
-        return f"`tabPulse Sprint`.`project` in ({plist})"
-    return ""
+    return _project_sql("Pulse Sprint", user or frappe.session.user)
 
 
 def status_log_query_conditions(user=None):
-    user = user or frappe.session.user
-    if "Pulse Admin" in frappe.get_roles(user) or "System Manager" in frappe.get_roles(
-        user
-    ):
-        return ""
-    projects = _allowed_projects(user)
-    if projects is not None:
-        plist = ", ".join(frappe.db.escape(p) for p in projects)
-        return f"`tabPulse Task Status Log`.`project` in ({plist})"
-    return ""
-
-
-def _allowed_projects(user):
-    cache_key = f"_allowed_projects:{user}"
-    if hasattr(frappe.local, cache_key):
-        return getattr(frappe.local, cache_key)
-    # membership now lives on ERPNext Project.users (Project User child table)
-    project_users = frappe.get_all(
-        "Project User",
-        filters={"user": user, "parenttype": "Project"},
-        pluck="parent",
-    )
-    result = project_users if project_users else None
-    setattr(frappe.local, cache_key, result)
-    return result
+    return _project_sql("Pulse Task Status Log", user or frappe.session.user)
 
 
 def _top_pulse_role(user):

@@ -6,6 +6,9 @@ Also serves the Super Productivity plugin (list my tasks, log time, sync status)
 """
 
 import frappe
+from pulse.utils.scope import scope_filter_list
+from frappe import _
+from pulse.utils.access import pulse_access_required, pulse_write_required
 from frappe.utils import getdate, today, add_days
 
 
@@ -20,10 +23,19 @@ def _resolve(task):
 
 
 @frappe.whitelist()
+@pulse_write_required
 def log_time(task, hours, date=None, note=None, user=None):
     """Log `hours` of work on a task on a date. Hours only — no billing."""
     name = _resolve(task)
+    # The timesheet save below bypasses permissions: the user must be able to see
+    # the task, and may only log time for someone else if they manage Pulse.
+    frappe.has_permission("Task", "read", name, throw=True)
     user = user or frappe.session.user
+    if user != frappe.session.user and not (
+        {"Pulse Admin", "Pulse Manager"} & set(frappe.get_roles())
+        or "System Manager" in frappe.get_roles()
+    ):
+        frappe.throw(_("You can only log time for yourself."), frappe.PermissionError)
     date = date or today()
     hours = float(hours or 0)
     if hours <= 0:
@@ -46,6 +58,7 @@ def log_time(task, hours, date=None, note=None, user=None):
 
 
 @frappe.whitelist()
+@pulse_access_required
 def get_task_time(task):
     """Total hours logged against a task (all users)."""
     name = _resolve(task)
@@ -57,6 +70,7 @@ def get_task_time(task):
 
 
 @frappe.whitelist()
+@pulse_access_required
 def get_task_time_detail(task):
     """Per-entry time log for a task (for the drawer)."""
     name = _resolve(task)
@@ -71,10 +85,11 @@ def get_task_time_detail(task):
 
 
 @frappe.whitelist()
+@pulse_access_required
 def my_tasks(status=None, limit=100):
     """Tasks assigned to the current user — consumed by the Super Productivity plugin."""
     me = frappe.session.user
-    filters = [["_assign", "like", f"%{me}%"]]
+    filters = [["_assign", "like", f"%{me}%"], *scope_filter_list()]
     if status:
         filters.append(["status", "=", status])
     else:

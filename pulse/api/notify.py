@@ -12,6 +12,7 @@ down ntfy server can never block or break a task save.
 import re
 
 import frappe
+from pulse.utils.access import pulse_access_required
 from frappe.utils import get_url
 
 
@@ -33,6 +34,7 @@ def _slug(user):
 
 
 @frappe.whitelist()
+@pulse_access_required
 def my_topic():
     """The ntfy topic the current user should subscribe to."""
     try:

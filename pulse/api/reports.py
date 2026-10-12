@@ -6,6 +6,8 @@ rather than only from the Desk.
 """
 
 import frappe
+from pulse.utils.scope import require_project_view, scope_filters
+from pulse.utils.access import pulse_access_required
 from frappe import _
 
 REPORTS = {
@@ -37,6 +39,7 @@ REPORTS = {
 
 
 @frappe.whitelist()
+@pulse_access_required
 def list_reports():
     return [
         {"key": k, "label": v["label"], "needs_sprint": v["needs_sprint"],
@@ -46,25 +49,31 @@ def list_reports():
 
 
 @frappe.whitelist()
+@pulse_access_required
 def sprint_options(project=None):
     filters = {}
     if project:
         filters["project"] = project
     return frappe.get_all(
-        "Pulse Sprint", filters=filters,
+        "Pulse Sprint", filters=scope_filters(filters),
         fields=["name", "sprint_name", "status", "project"],
         order_by="start_date desc", limit_page_length=0,
     )
 
 
 @frappe.whitelist()
+@pulse_access_required
 def run_report(report, project=None, sprint=None):
     cfg = REPORTS.get(report)
     if not cfg:
         frappe.throw(_("Unknown report: {0}").format(report))
+    if project:
+        require_project_view(project)
     mod = frappe.get_module(cfg["module"])
     try:
         columns, data = mod.execute({"project": project, "sprint": sprint})
+    except frappe.PermissionError:
+        raise
     except Exception:
         frappe.log_error(title="Pulse: report failed", message=frappe.get_traceback())
         frappe.throw(_("This report could not be generated."))

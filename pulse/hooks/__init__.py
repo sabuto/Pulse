@@ -10,7 +10,10 @@ app_logo_url = "/assets/pulse/images/pulse-logo.png"
 app_version = "0.2.0"
 
 # Tiny Desk helper: makes the "Pulse" workspace icon open the SPA at /pulse directly.
-app_include_js = ["/assets/pulse/js/pulse_desk.js"]
+app_include_js = [
+    "/assets/pulse/js/pulse_desk.js",
+    "/assets/pulse/js/pulse_report_bug.js?v=1",
+]
 app_include_css = []
 
 web_include_js = []
@@ -134,6 +137,7 @@ doc_events = {
 # ---------------------------------------------------------------------------
 permission_query_conditions = {
     "Task": "pulse.hooks.permissions.task_query_conditions",
+    "Project": "pulse.hooks.permissions.project_query_conditions",
     "Pulse Sprint": "pulse.hooks.permissions.sprint_query_conditions",
     "Pulse Task Status Log": "pulse.hooks.permissions.status_log_query_conditions",
 }
