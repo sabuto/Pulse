@@ -150,10 +150,10 @@ function focusDesc() {}
 
 async function ensureData() {
   if (!projects.value.length) {
-    projects.value = await call('frappe.client.get_list', { doctype: 'Project', fields: ['name', 'project_name'], limit_page_length: 0 }).catch(() => [])
+    projects.value = await call('pulse.api.spa.get_projects').catch(() => [])
   }
   if (!issueTypes.value.length) {
-    issueTypes.value = await call('frappe.client.get_list', { doctype: 'Task Type', fields: ['name'], limit_page_length: 0 }).then((r) => r.map((x) => x.name)).catch(() => ['Task'])
+    issueTypes.value = await call('pulse.api.spa.get_task_types').catch(() => ['Task'])
   }
   if (!assignable.value.length) {
     assignable.value = await call('pulse.api.spa.get_assignable_users').catch(() => [])
@@ -162,10 +162,7 @@ async function ensureData() {
 
 async function loadSprints() {
   if (!form.project) { sprints.value = []; return }
-  sprints.value = await call('frappe.client.get_list', {
-    doctype: 'Pulse Sprint', filters: { project: form.project },
-    fields: ['name', 'sprint_name', 'status'], limit_page_length: 0,
-  }).catch(() => [])
+  sprints.value = await call('pulse.api.spa.list_sprints', { project: form.project }).catch(() => [])
 }
 
 watch(() => createState.open, async (open) => {

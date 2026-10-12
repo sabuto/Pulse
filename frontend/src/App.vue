@@ -61,6 +61,7 @@
     </main>
 
     <CreateIssueModal />
+    <ResolutionDialog />
     <EntityForm />
     <Toaster />
   </div>
@@ -74,6 +75,7 @@ import { openCreate } from './ui/create'
 import Avatar from './ui/Avatar.vue'
 import Toaster from './ui/Toaster.vue'
 import CreateIssueModal from './components/CreateIssueModal.vue'
+import ResolutionDialog from './components/ResolutionDialog.vue'
 
 // Pulse Viewer is read-only; the server enforces it, this just hides the controls.
 const canWrite = window.can_write !== false
@@ -145,9 +147,7 @@ function onToggle() { toggleTheme() }
 
 onMounted(async () => {
   try { user.value = await call('frappe.auth.get_logged_user') } catch (e) { user.value = '' }
-  projects.value = await call('frappe.client.get_list', {
-    doctype: 'Project', fields: ['name', 'project_name', 'pulse_project_key'], limit_page_length: 0,
-  }).catch(() => [])
+  projects.value = await call('pulse.api.spa.get_projects').catch(() => [])
 })
 </script>
 

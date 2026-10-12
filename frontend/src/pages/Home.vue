@@ -68,10 +68,7 @@ async function reload() {
   const [u, s, r] = await Promise.all([
     call('frappe.auth.get_logged_user'),
     call('pulse.api.dashboards.get_dashboard_stats').catch(() => ({})),
-    call('frappe.client.get_list', {
-      doctype: 'Task', fields: ['name', 'issue_key', 'subject', 'status', 'modified'],
-      order_by: 'modified desc', limit_page_length: 8,
-    }).catch(() => []),
+    call('pulse.api.spa.list_tasks', { which: 'recent', limit: 8 }).catch(() => []),
   ])
   const full = await call('frappe.client.get_value', { doctype: 'User', filters: u, fieldname: 'first_name' }).catch(() => null)
   firstName.value = (full && full.first_name) || (u || '').split('@')[0]

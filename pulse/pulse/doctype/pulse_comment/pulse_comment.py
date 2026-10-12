@@ -6,6 +6,15 @@ class PulseComment(Document):
     def after_insert(self):
         self.create_activity_log()
         self.send_mention_notifications()
+        self.send_email_notifications()
+
+    def send_email_notifications(self):
+        # never let a mail problem stop a comment being saved
+        try:
+            from pulse import emails
+            emails.on_comment(self)
+        except Exception:
+            frappe.log_error(title="Pulse: comment email failed", message=frappe.get_traceback())
 
     def create_activity_log(self):
         try:

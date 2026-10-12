@@ -6,6 +6,7 @@ permissions + the hierarchical-assignment hook fire normally.
 """
 
 import json
+import os
 
 import frappe
 from frappe import _
@@ -20,6 +21,7 @@ from pulse.utils.scope import (
 from pulse.utils.access import (
     get_pulse_users,
     has_pulse_access,
+    has_pulse_write,
     pulse_access_required,
     pulse_write_required,
     require_pulse_assignee,
@@ -96,6 +98,72 @@ def _publish_board(project=None):
                                 room=get_site_room(), after_commit=False)
     except Exception:
         pass
+
+
+# --- lookups for the SPA ---------------------------------------------------------
+# The app used to read these with frappe.client.get_list, which needs ERPNext
+# permissions on Project / Task / Task Type that the Pulse roles don't carry, so a
+# Pulse-only user got "Insufficient Permission" or silently empty lists. These are
+# scoped to the user's projects (utils/scope.py) and need only a Pulse role.
+
+@frappe.whitelist()
+@pulse_access_required
+def get_task_types():
+    """Names of the task types (Bug, Story, ...)."""
+    return frappe.get_all("Task Type", pluck="name", order_by="name asc")
+
+
+@frappe.whitelist()
+@pulse_access_required
+def get_projects():
+    """Projects the user may see, with their task counts."""
+    projects = frappe.get_all(
+        "Project", filters=scope_filters({}, field="name"),
+        fields=["name", "project_name", "status", "notes", "pulse_project_key"],
+        order_by="modified desc", limit_page_length=0,
+    )
+    counts = {r.project: r.n for r in frappe.get_all(
+        "Task", filters=scope_filters({}), fields=["project", {"COUNT": "name", "as": "n"}],
+        group_by="project")}
+    for p in projects:
+        p["task_count"] = counts.get(p.name, 0)
+    return projects
+
+
+@frappe.whitelist()
+@pulse_access_required
+def list_sprints(project=None):
+    """Sprints in the user's projects, with their task counts."""
+    sprints = frappe.get_all(
+        "Pulse Sprint", filters=scope_filters({"project": project} if project else {}),
+        fields=["name", "sprint_name", "status", "start_date", "end_date", "project"],
+        order_by="start_date desc", limit_page_length=0,
+    )
+    counts = {r.pulse_sprint: r.n for r in frappe.get_all(
+        "Task", filters=scope_filters({"pulse_sprint": ["is", "set"]}),
+        fields=["pulse_sprint", {"COUNT": "name", "as": "n"}], group_by="pulse_sprint")}
+    for sp in sprints:
+        sp["task_count"] = counts.get(sp.name, 0)
+    return sprints
+
+
+@frappe.whitelist()
+@pulse_access_required
+def list_tasks(which="all", limit=0):
+    """Flat task lists: `all` (by board rank), `recent` (latest changed) or `mine` (assigned to me)."""
+    filters = []
+    order = "pulse_rank asc, modified desc"
+    if which == "mine":
+        filters.append(["_assign", "like", f"%{frappe.session.user}%"])
+        order = "modified desc"
+    elif which == "recent":
+        order = "modified desc"
+    return frappe.get_all(
+        "Task", filters=[*filters, *scope_filter_list()],
+        fields=["name", "issue_key", "subject", "type as task_type", "priority", "status",
+                "workflow_state", "project", "modified"],
+        order_by=order, limit_page_length=int(limit or 0),
+    )
 
 
 @frappe.whitelist()
@@ -218,14 +286,20 @@ def _create_task(project, subject, state="Backlog", task_type=None, priority="Me
 
 @frappe.whitelist()
 @pulse_write_required
-def update_task_state(task, state):
-    """Move a card to a new board column (updates workflow_state + status)."""
+def update_task_state(task, state, resolution=None):
+    """Move a card to a new board column (updates workflow_state + status).
+
+    `resolution` is the optional "what was done" note given when moving to Done; it is
+    stored before the save so the completion email can include it.
+    """
     require_task_view(task)
     if state not in STATE_TO_STATUS:
         frappe.throw(_("Unknown board column: {0}").format(state))
     doc = frappe.get_doc("Task", task)
     doc.workflow_state = state
     doc.status = STATE_TO_STATUS[state]
+    if state == "Done" and resolution and resolution.strip():
+        doc.pulse_resolution = resolution.strip()[:2000]
     doc.flags.ignore_links = True  # a stale epic/dep link shouldn't block a board move
     doc.save()
     from pulse.api.audit import log
@@ -294,6 +368,8 @@ def get_task(task):
         "pulse_sprint": doc.pulse_sprint,
         "pulse_epic": doc.get("pulse_epic"), "pulse_release": doc.get("pulse_release"),
         "exp_start_date": doc.exp_start_date, "exp_end_date": doc.exp_end_date,
+        "resolution": doc.get("pulse_resolution"),
+        "can_comment": can_comment(doc.name),
         "bug": _bug_details(doc),
         "assignees": _assignees(doc._assign),
         "checklist": checklist, "comments": comments,
@@ -378,7 +454,7 @@ def update_task(task, **fields):
     allowed = {
         "subject", "description", "priority", "task_type",
         "exp_start_date", "exp_end_date", "project",
-        "pulse_sprint", "pulse_epic", "pulse_release",
+        "pulse_sprint", "pulse_epic", "pulse_release", "pulse_resolution",
     }
     doc = frappe.get_doc("Task", task)
     for k, v in fields.items():
@@ -415,21 +491,70 @@ def unassign_task(task, user):
     return {"assignees": _assignees(frappe.db.get_value("Task", task, "_assign"))}
 
 
-@frappe.whitelist()
-@pulse_write_required
-def add_comment(task, text):
+def can_comment(task, user=None):
+    """Writers may comment anywhere; a read-only role (Pulse Viewer) only on tasks they raised."""
+    user = user or frappe.session.user
+    if has_pulse_write(user):
+        return True
+    owner, reporter = frappe.db.get_value("Task", task, ["owner", "pulse_reported_by"]) or (None, None)
+    return user in (owner, reporter)
+
+
+def _require_can_comment(task):
     require_task_view(task)
+    if not can_comment(task):
+        frappe.throw(_("Your Pulse role is read-only."), frappe.PermissionError)
+
+
+@frappe.whitelist()
+@pulse_access_required
+def add_comment(task, text):
+    _require_can_comment(task)
     project = frappe.db.get_value("Task", task, "project")
+    # Pulse Viewer has no create permission on Pulse Comment; _require_can_comment above
+    # is the check that lets a reporter through, so the insert skips the DocPerm check.
     doc = frappe.get_doc({
         "doctype": "Pulse Comment", "task": task, "project": project,
         "comment_text": text,
-    }).insert()
+    }).insert(ignore_permissions=True)
     from pulse.api.audit import log
     key = frappe.db.get_value("Task", task, "issue_key") or task
     log("Comment Added", "Task", key, project, text[:140])
     frappe.db.commit()
     return {"name": doc.name, "comment_text": doc.comment_text,
             "owner": doc.owner, "creation": str(doc.creation)}
+
+
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+MAX_COMMENT_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+@frappe.whitelist()
+@pulse_access_required
+def upload_comment_image(task):
+    """Store an image pasted into a comment as a private file on the task.
+
+    Frappe's own upload_file needs write permission on the Task, which a Pulse Viewer
+    lacks even on a task they raised, so they could comment but not paste a screenshot.
+    The same rule as add_comment is checked first, then the file is saved without a
+    Task permission check. Only small image files are accepted.
+    """
+    _require_can_comment(task)
+    upload = frappe.request.files.get("file") if getattr(frappe, "request", None) else None
+    if not upload:
+        frappe.throw(_("No file received."))
+    name = os.path.basename(upload.filename or "pasted-image.png")
+    if not name.lower().endswith(IMAGE_EXTENSIONS):
+        frappe.throw(_("Only image files can be added to a comment."))
+    content = upload.stream.read(MAX_COMMENT_IMAGE_BYTES + 1)
+    if len(content) > MAX_COMMENT_IMAGE_BYTES:
+        frappe.throw(_("Images can be at most 10 MB."))
+    doc = frappe.get_doc({
+        "doctype": "File", "file_name": name, "content": content, "is_private": 1,
+        "attached_to_doctype": "Task", "attached_to_name": task,
+    }).insert(ignore_permissions=True)
+    return {"name": doc.name, "file_name": doc.file_name, "file_url": doc.file_url,
+            "file_size": len(content), "is_private": 1}
 
 
 @frappe.whitelist()

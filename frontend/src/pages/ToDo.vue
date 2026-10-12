@@ -21,7 +21,7 @@
           <div v-for="t in g.items" :key="t.name"
             class="flex items-center gap-3 py-2 border-b border-soft hover-app cursor-pointer"
             @click="openId = t.name">
-            <input type="checkbox" class="shrink-0 cursor-pointer" title="Mark done" @click.stop="complete(t)" />
+            <input v-if="canWrite" type="checkbox" class="shrink-0 cursor-pointer" title="Mark done" @click.stop="complete(t)" />
             <span class="mono text-[11px] text-faint w-16 shrink-0">{{ t.issue_key }}</span>
             <span class="flex-1 truncate text-app">{{ t.subject }}</span>
             <PriorityDot :value="t.priority" />
@@ -39,6 +39,8 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { canWrite } from '@/utils/access'
+import { askResolution } from '@/ui/resolution'
 import { call } from 'frappe-ui'
 import TaskDrawer from '@/components/TaskDrawer.vue'
 import PriorityDot from '@/ui/PriorityDot.vue'
@@ -81,8 +83,11 @@ async function reload() {
 }
 
 async function complete(t) {
+  const note = await askResolution(t)
+  if (note === null) return  // cancelled
   try {
-    await call('pulse.api.spa.update_task_state', { task: t.name, state: 'Done' })
+    await call('pulse.api.spa.update_task_state',
+      { task: t.name, state: 'Done', ...(note ? { resolution: note } : {}) })
     tasks.value = tasks.value.filter((x) => x.name !== t.name)
     toast.success(`${t.issue_key} completed`)
   } catch (e) {

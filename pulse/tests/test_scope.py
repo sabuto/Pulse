@@ -1,6 +1,7 @@
 """Pulse users only see the projects they belong to (Admin and Manager see all)."""
 
 import json
+from unittest import mock
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -127,6 +128,105 @@ class TestPulseScope(IntegrationTestCase):
         self.assertEqual(spa.get_task(self.task_a["name"])["blocked_by"], [])
         self._as(MANAGER)
         self.assertEqual(len(spa.get_task(self.task_a["name"])["blocked_by"]), 1)
+
+    def test_lookups_work_from_a_pulse_role_alone_and_are_scoped(self):
+        # A Pulse-only user has no ERPNext permission on Task Type, so the generic
+        # get_list the app used to call is refused; the Pulse endpoints are not.
+        self._as(OUTSIDER)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.client.get_list("Task Type", fields=["name"])
+        self.assertIn("Bug", spa.get_task_types())
+        self.assertEqual(spa.get_projects(), [])  # member of nothing
+        self.assertEqual(spa.list_tasks("all"), [])
+        self.assertEqual(spa.list_sprints(), [])
+
+        self._as(MEMBER)
+        projects = {p["name"]: p for p in spa.get_projects()}
+        self.assertEqual(set(projects) & {self.a, self.b}, {self.a})
+        self.assertEqual(projects[self.a]["task_count"], 1)
+        self.assertEqual({t["name"] for t in spa.list_tasks("all")}, {self.task_a["name"]})
+        self.assertEqual({t["name"] for t in spa.list_tasks("recent", 5)}, {self.task_a["name"]})
+
+        self._as(MANAGER)
+        projects = {p["name"]: p for p in spa.get_projects()}
+        self.assertTrue({self.a, self.b} <= set(projects))
+        self.assertEqual(projects[self.b]["task_count"], 2)  # task + epic
+
+    def test_mine_lists_only_my_assigned_tasks(self):
+        frappe.set_user("Administrator")
+        with mock.patch("frappe.sendmail"):
+            spa.assign_task(self.task_a["name"], MEMBER)
+        self._as(MEMBER)
+        self.assertEqual([t["name"] for t in spa.list_tasks("mine")], [self.task_a["name"]])
+        self._as(OUTSIDER)
+        self.assertEqual(spa.list_tasks("mine"), [])
+
+    def _viewer_reporter(self):
+        """A read-only Pulse Viewer on project A who raised `task_a`."""
+        email = "pulse-scope-vreporter@example.com"
+        _make_user(email, ["Pulse Viewer"])
+        frappe.set_user("Administrator")
+        frappe.flags.mute_emails = True
+        proj = frappe.get_doc("Project", self.a)
+        proj.append("users", {"user": email})
+        proj.save(ignore_permissions=True)
+        frappe.db.set_value("Task", self.task_a["name"], "owner", email)
+        frappe.flags.mute_emails = False
+        return email
+
+    def test_viewer_can_comment_only_on_tasks_they_raised(self):
+        viewer = self._viewer_reporter()
+        self._as(viewer)
+        mine = self.task_a["name"]
+        self.assertTrue(spa.get_task(mine)["can_comment"])
+        with mock.patch("frappe.sendmail"):
+            comment = spa.add_comment(mine, "any update on this?")
+        self.assertEqual(comment["owner"], viewer)
+        # still read-only everywhere else
+        with self.assertRaises(frappe.PermissionError):
+            spa.update_task_state(mine, "Done")
+        with self.assertRaises(frappe.PermissionError):
+            spa.update_task(mine, subject="renamed")
+
+        # a task someone else raised, in the same project: visible, but not commentable
+        frappe.set_user("Administrator")
+        theirs = spa.create_task(self.a, "someone else's task")["name"]
+        self._as(viewer)
+        self.assertFalse(spa.get_task(theirs)["can_comment"])
+        with self.assertRaises(frappe.PermissionError):
+            spa.add_comment(theirs, "let me in")
+
+    def test_comment_image_upload_follows_the_same_rule(self):
+        from types import SimpleNamespace
+        import io
+
+        def fake(name, data=b"\x89PNG-viewer-image"):
+            return SimpleNamespace(
+                host="test_agile.localhost", headers={}, environ={}, scheme="http",
+                files={"file": SimpleNamespace(filename=name, stream=io.BytesIO(data))})
+
+        viewer = self._viewer_reporter()
+        original = getattr(frappe.local, "request", None)
+        try:
+            self._as(viewer)
+            frappe.local.request = fake("shot.png")
+            res = spa.upload_comment_image(self.task_a["name"])
+            self.assertTrue(res["file_url"].startswith("/private/files/"))
+            attached = frappe.db.get_value("File", res["name"], ["attached_to_doctype", "attached_to_name"])
+            self.assertEqual(tuple(attached), ("Task", self.task_a["name"]))
+
+            frappe.local.request = fake("notes.exe")
+            with self.assertRaises(frappe.ValidationError):
+                spa.upload_comment_image(self.task_a["name"])
+
+            frappe.set_user("Administrator")
+            theirs = spa.create_task(self.a, "someone else's task")["name"]
+            self._as(viewer)
+            frappe.local.request = fake("shot2.png")
+            with self.assertRaises(frappe.PermissionError):
+                spa.upload_comment_image(theirs)
+        finally:
+            frappe.local.request = original
 
     def test_desk_query_conditions(self):
         clear_scope_cache()

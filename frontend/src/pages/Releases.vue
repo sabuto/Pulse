@@ -78,7 +78,7 @@ async function reload() {
 }
 
 onMounted(async () => {
-  projects.value = await call('frappe.client.get_list', { doctype: 'Project', fields: ['name', 'project_name'], limit_page_length: 0 }).catch(() => [])
+  projects.value = await call('pulse.api.spa.get_projects').catch(() => [])
   reload()
 })
 </script>

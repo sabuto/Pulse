@@ -7,7 +7,7 @@
           <option :value="null">All projects</option>
           <option v-for="p in projects" :key="p.name" :value="p.name">{{ p.project_name || p.name }}</option>
         </select>
-        <button @click="openCreate({ project, task_type: 'Epic' })" class="btn-primary">
+        <button v-if="canWrite" @click="openCreate({ project, task_type: 'Epic' })" class="btn-primary">
           <Plus class="w-3.5 h-3.5" /> New epic
         </button>
       </div>
@@ -54,6 +54,7 @@
 
 <script setup>
 import { ref, watch, onMounted } from 'vue'
+import { canWrite } from '@/utils/access'
 import { call } from 'frappe-ui'
 import TaskDrawer from '@/components/TaskDrawer.vue'
 import StatusPill from '@/ui/StatusPill.vue'
@@ -87,7 +88,7 @@ async function reload() {
 
 watch(() => createState.created, reload)
 onMounted(async () => {
-  projects.value = await call('frappe.client.get_list', { doctype: 'Project', fields: ['name', 'project_name'], limit_page_length: 0 }).catch(() => [])
+  projects.value = await call('pulse.api.spa.get_projects').catch(() => [])
   reload()
 })
 </script>

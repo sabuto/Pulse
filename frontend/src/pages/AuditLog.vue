@@ -69,7 +69,7 @@ async function load() {
   const [e, ps] = await Promise.all([
     call('pulse.api.audit.get_audit_log', { project: project.value, limit: 200 }),
     projects.value.length ? Promise.resolve(projects.value)
-      : call('frappe.client.get_list', { doctype: 'Project', fields: ['name', 'project_name'], limit_page_length: 0 }),
+      : call('pulse.api.spa.get_projects'),
   ])
   entries.value = e || []
   projects.value = ps

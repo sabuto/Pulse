@@ -25,12 +25,7 @@ const loading = ref(true)
 const tasks = ref([])
 
 onMounted(async () => {
-  tasks.value = await call('frappe.client.get_list', {
-    doctype: 'Task',
-    fields: ['name', 'subject', 'type as task_type', 'status'],
-    order_by: 'pulse_rank asc, modified desc',
-    limit_page_length: 0,
-  }).catch(() => [])
+  tasks.value = await call('pulse.api.spa.list_tasks', { which: 'all' }).catch(() => [])
   loading.value = false
 })
 </script>

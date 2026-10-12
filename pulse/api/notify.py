@@ -13,7 +13,6 @@ import re
 
 import frappe
 from pulse.utils.access import pulse_access_required
-from frappe.utils import get_url
 
 
 def _settings():
@@ -103,13 +102,6 @@ def _send(user, title, message, tags=None, click=None, priority="default"):
         frappe.log_error(title="Pulse ntfy send failed", message=frappe.get_traceback())
 
 
-def _pulse_url():
-    try:
-        return get_url("/pulse")
-    except Exception:
-        return None
-
-
 # ---------------------------------------------------------------------------
 # Event handlers (wired via hooks)
 # ---------------------------------------------------------------------------
@@ -126,14 +118,18 @@ def on_todo_after_insert(doc, method=None):
     if not t:
         return
     key = t.issue_key or doc.get("reference_name")
+    from pulse import emails
     _dispatch(who, "Task assigned to you",
               f"{key}: {t.subject}\nassigned by {frappe.session.user}",
-              tags="inbox_tray", click=_pulse_url())
+              tags="inbox_tray", click=emails.link_for_user(who, doc.get("reference_name")))
 
 
 def notify_task_completed(doc):
-    """Called from Task on_update -> notify the assigner(s) when a task is completed."""
-    if not (enabled() or email_enabled()):
+    """Called from Task on_update -> push (ntfy) to the assigner(s) when a task is completed.
+
+    The email side is now the completion summary in pulse.emails.
+    """
+    if not enabled():
         return
     is_done = doc.get("status") == "Completed" or doc.get("workflow_state") == "Done"
     if not is_done:
@@ -152,7 +148,7 @@ def notify_task_completed(doc):
     recipients.add(doc.owner)
     recipients.discard(None)
     recipients.discard(completer)  # don't notify the person who completed it
+    from pulse import emails
     for u in recipients:
-        _dispatch(u, "Task completed",
-                  f"{key}: {doc.subject}\ncompleted by {completer}",
-                  tags="white_check_mark", click=_pulse_url())
+        _send(u, "Task completed", f"{key}: {doc.subject}\ncompleted by {completer}",
+              tags="white_check_mark", click=emails.link_for_user(u, doc.name))

@@ -131,7 +131,7 @@ async function load() {
 onMounted(async () => {
   const [rs, ps] = await Promise.all([
     call('pulse.api.reports.list_reports').catch(() => []),
-    call('frappe.client.get_list', { doctype: 'Project', fields: ['name', 'project_name'], limit_page_length: 0 }).catch(() => []),
+    call('pulse.api.spa.get_projects').catch(() => []),
   ])
   reports.value = rs
   projects.value = ps

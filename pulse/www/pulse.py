@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 import frappe
 from frappe import _
 
@@ -12,9 +14,12 @@ def get_context(context):
     The frappe-ui build injects `window[key] = boot[key]` for each key below,
     giving the SPA its CSRF token and session context for authenticated calls.
     """
-    # Not logged in -> Frappe login, then bounce back to Pulse.
+    # Not logged in -> Frappe login, then bounce back to where they were going, so an
+    # emailed link to a task still opens that task after sign-in.
     if frappe.session.user == "Guest":
-        frappe.local.flags.redirect_location = "/login?redirect-to=/pulse"
+        request = getattr(frappe.local, "request", None)
+        target = request.full_path.rstrip("?") if request else "/pulse"
+        frappe.local.flags.redirect_location = "/login?redirect-to=" + quote(target, safe="")
         raise frappe.Redirect
 
     # Logged in but without any Pulse role -> no access to the SPA.

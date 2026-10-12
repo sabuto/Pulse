@@ -15,6 +15,13 @@ def on_update(doc, method=None):
     except Exception:
         frappe.log_error(title="Pulse: status log failed", message=frappe.get_traceback())
     try:
+        from pulse import emails
+        from_state, to_state, is_new = _state_pair(doc)
+        if to_state and not is_new and from_state != to_state:
+            emails.on_state_change(doc, from_state, to_state)
+    except Exception:
+        frappe.log_error(title="Pulse: state email failed", message=frappe.get_traceback())
+    try:
         _rollup_sprint_tasks(doc)
     except Exception:
         frappe.log_error(title="Pulse: sprint rollup failed", message=frappe.get_traceback())
@@ -81,27 +88,30 @@ def _make_key(name):
     return "".join(w[0] for w in words)[:5]
 
 
-def _log_status_change(doc):
+_STATUS_MAP = {
+    "Open": "To Do",
+    "Working": "In Progress",
+    "Pending Review": "In Review",
+    "Completed": "Done",
+    "Cancelled": "Cancelled",
+}
+
+
+def _state_pair(doc):
+    """(from_state, to_state, is_new) with ERPNext statuses mapped to board columns."""
     to_state = doc.get("workflow_state") or doc.status
-    if not to_state:
-        return
-    
-    status_map = {
-        "Open": "To Do",
-        "Working": "In Progress",
-        "Pending Review": "In Review",
-        "Completed": "Done",
-        "Cancelled": "Cancelled"
-    }
-    if to_state in status_map:
-        to_state = status_map[to_state]
-        
+    to_state = _STATUS_MAP.get(to_state, to_state)
     before = doc.get_doc_before_save()
     from_state = (before.get("workflow_state") or before.status) if before is not None else None
-    if from_state in status_map:
-        from_state = status_map[from_state]
-        
-    if before is not None and from_state == to_state:
+    from_state = _STATUS_MAP.get(from_state, from_state)
+    return from_state, to_state, before is None
+
+
+def _log_status_change(doc):
+    from_state, to_state, is_new = _state_pair(doc)
+    if not to_state:
+        return
+    if not is_new and from_state == to_state:
         return
     log = frappe.new_doc("Pulse Task Status Log")
     log.task = doc.name

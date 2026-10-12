@@ -1,0 +1,2 @@
+import{k as t}from"./index-Dp223OrE.js";const e={inheritAttrs:!1,render(){return t("svg",{xmlns:"http://www.w3.org/2000/svg",width:"24",height:"24",viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"1.5","stroke-linecap":"round","stroke-linejoin":"round",...this.$attrs,innerHTML:'<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" />'})}};export{e as R};
+//# sourceMappingURL=rotate-cw-Dw5uzfv4.js.map

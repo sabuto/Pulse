@@ -56,7 +56,7 @@
           <span class="w-1.5 h-1.5 rounded-full" :style="{ background: colColor(col.name) }" />
           <span class="text-[12.5px] font-medium text-app">{{ col.name }}</span>
           <span class="text-[11px] text-faint tnum ml-1">{{ col.tasks.length }}</span>
-          <button @click="startAdd(col.name)" class="ml-auto p-1 rounded hover-app text-faint" title="Add task"><Plus class="w-3.5 h-3.5" /></button>
+          <button v-if="canWrite" @click="startAdd(col.name)" class="ml-auto p-1 rounded hover-app text-faint" title="Add task"><Plus class="w-3.5 h-3.5" /></button>
         </div>
         <div class="flex flex-col gap-2 rounded-lg p-1.5 transition-colors flex-1 min-h-[60px]"
           :style="{ background: dragOver === col.name ? 'var(--surface-2)' : 'transparent' }">
@@ -67,7 +67,7 @@
             <div class="text-[10px] text-faint mt-1.5">Enter to add · Esc to cancel</div>
           </div>
 
-          <div v-for="t in col.tasks" :key="t.name" draggable="true" @dragstart="dragTask = t" @click="open(t.name)"
+          <div v-for="t in col.tasks" :key="t.name" :draggable="canWrite" @dragstart="canWrite && (dragTask = t)" @click="open(t.name)"
             class="card group card-surface p-3 cursor-pointer">
             <div class="flex items-center gap-2 mb-1.5">
               <span class="mono text-[10.5px] text-faint">{{ t.issue_key }}</span>
@@ -81,7 +81,7 @@
               </div>
             </div>
           </div>
-          <button v-if="!col.tasks.length && adding !== col.name" @click="startAdd(col.name)"
+          <button v-if="canWrite && !col.tasks.length && adding !== col.name" @click="startAdd(col.name)"
             class="text-[12px] text-faint hover:text-muted py-2 text-left px-1">+ Add task</button>
         </div>
       </div>
@@ -114,7 +114,7 @@
 
 <script setup>
 import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { call } from 'frappe-ui'
 import { io } from 'socket.io-client'
 import TaskDrawer from '@/components/TaskDrawer.vue'
@@ -124,6 +124,7 @@ import PriorityDot from '@/ui/PriorityDot.vue'
 import Skeleton from '@/ui/Skeleton.vue'
 import { toast } from '@/ui/toast'
 import { openCreate, createState } from '@/ui/create'
+import { askResolution } from '@/ui/resolution'
 import SquareKanban from '~icons/lucide/square-kanban'
 import List from '~icons/lucide/list'
 import Search from '~icons/lucide/search'
@@ -133,6 +134,7 @@ import X from '~icons/lucide/x'
 const canWrite = window.can_write !== false
 
 const route = useRoute()
+const router = useRouter()
 const loading = ref(true)
 const view = ref('board')
 const board = ref({ columns: [], total: 0 })
@@ -175,9 +177,9 @@ async function load() {
   const [b, ps, its] = await Promise.all([
     call('pulse.api.spa.get_board', { project: project.value }),
     projects.value.length ? Promise.resolve(projects.value)
-      : call('frappe.client.get_list', { doctype: 'Project', fields: ['name', 'project_name'], limit_page_length: 0 }),
+      : call('pulse.api.spa.get_projects'),
     issueTypes.value.length ? Promise.resolve(issueTypes.value)
-      : call('frappe.client.get_list', { doctype: 'Task Type', fields: ['name'], limit_page_length: 0 }).then((r) => r.map((x) => x.name)),
+      : call('pulse.api.spa.get_task_types'),
   ])
   board.value = b; projects.value = ps; issueTypes.value = its
   loading.value = false
@@ -189,13 +191,20 @@ async function onDrop(colName) {
   if (!t) return
   const fromCol = board.value.columns.find((c) => c.tasks.some((x) => x.name === t.name))
   if (fromCol?.name === colName) return
+  // Moving to Done sends a summary email, so offer a "what was done" note first.
+  let note = ''
+  if (colName === 'Done') {
+    note = await askResolution(t)
+    if (note === null) return  // cancelled: leave the card where it is
+  }
   for (const c of board.value.columns) {
     const i = c.tasks.findIndex((x) => x.name === t.name)
     if (i >= 0) c.tasks.splice(i, 1)
   }
   board.value.columns.find((c) => c.name === colName)?.tasks.unshift(t)
   try {
-    await call('pulse.api.spa.update_task_state', { task: t.name, state: colName })
+    await call('pulse.api.spa.update_task_state',
+      { task: t.name, state: colName, ...(note ? { resolution: note } : {}) })
     toast.success(`${t.issue_key} moved to ${colName}`)
   } catch (e) { toast.error('Could not move task'); load() }
 }
@@ -217,6 +226,36 @@ async function submitAdd(col) {
 }
 
 function open(name) { openId.value = name }
+
+// --- deep link: /pulse/board?project=…&task=EB-12 opens that task's side window ---
+// (the link in notification emails). The address bar follows the open task, so it can
+// be copied and shared.
+let lastKey = route.query.task || null
+function keyOf(name) {
+  for (const c of board.value.columns) {
+    const t = c.tasks.find((x) => x.name === name)
+    if (t) return t.issue_key || name
+  }
+  return name
+}
+async function openFromQuery() {
+  const ref = route.query.task
+  if (!ref || ref === lastKey && openId.value) return
+  try {
+    openId.value = await call('pulse.api.spa.resolve_task', { ref })
+  } catch (e) {
+    toast.error("You don't have access to that task")
+    router.replace({ query: { ...route.query, task: undefined } })
+  }
+}
+watch(openId, (id) => {
+  const key = id ? keyOf(id) : null
+  lastKey = key
+  if ((route.query.task || null) !== key) {
+    router.replace({ query: { ...route.query, task: key || undefined } })
+  }
+})
+watch(() => route.query.task, openFromQuery)
 // reload when an issue is created from the global New Issue dialog
 watch(() => createState.created, load)
 
@@ -259,7 +298,7 @@ function connectRealtime() {
     console.warn('[pulse] realtime init failed', e)
   }
 }
-onMounted(() => { load(); connectRealtime() })
+onMounted(() => { load().then(openFromQuery); connectRealtime() })
 onUnmounted(() => { try { socket && socket.disconnect() } catch (e) {} clearTimeout(rtTimer) })
 </script>
 

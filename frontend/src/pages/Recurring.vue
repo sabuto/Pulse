@@ -2,7 +2,7 @@
   <div class="p-6">
     <div class="flex items-center justify-between mb-1">
       <h1 class="text-2xl font-bold">Recurring Tasks</h1>
-      <button @click="openCreate({ repeat: true })" class="btn-primary">
+      <button v-if="canWrite" @click="openCreate({ repeat: true })" class="btn-primary">
         <Plus class="w-3.5 h-3.5" /> New recurring task
       </button>
     </div>
@@ -25,7 +25,7 @@
               <span v-if="!r.is_active" class="tele text-[10px] text-faint">paused</span>
             </div>
           </div>
-          <div class="flex items-center gap-1.5 shrink-0">
+          <div v-if="canWrite" class="flex items-center gap-1.5 shrink-0">
             <button class="icon-btn" title="Generate a task now" @click="runNow(r)"><Play class="w-4 h-4" /></button>
             <button class="icon-btn" :title="r.is_active ? 'Pause' : 'Resume'" @click="toggle(r)">
               <Pause v-if="r.is_active" class="w-4 h-4" />
@@ -42,6 +42,7 @@
 
 <script setup>
 import { ref, watch, onMounted } from 'vue'
+import { canWrite } from '@/utils/access'
 import { call } from 'frappe-ui'
 import Skeleton from '@/ui/Skeleton.vue'
 import { openCreate, createState } from '@/ui/create'

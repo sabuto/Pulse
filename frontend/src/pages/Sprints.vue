@@ -2,7 +2,7 @@
   <div class="p-6">
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-2xl font-bold">Sprints</h1>
-      <button @click="openEntity('Pulse Sprint')" class="btn-primary">
+      <button v-if="canWrite" @click="openEntity('Pulse Sprint')" class="btn-primary">
         <Plus class="w-3.5 h-3.5" /> New sprint
       </button>
     </div>
@@ -31,6 +31,7 @@
 
 <script setup>
 import { ref, watch, onMounted } from 'vue'
+import { canWrite } from '@/utils/access'
 import { call } from 'frappe-ui'
 import StatusPill from '@/ui/StatusPill.vue'
 import Skeleton from '@/ui/Skeleton.vue'
@@ -43,14 +44,8 @@ const sprints = ref([])
 
 async function reload() {
   loading.value = true
-  const list = await call('frappe.client.get_list', {
-    doctype: 'Pulse Sprint',
-    fields: ['name', 'sprint_name', 'status', 'start_date', 'end_date', 'project'],
-    order_by: 'start_date desc', limit_page_length: 0,
-  }).catch(() => [])
-  for (const s of list) {
-    s.taskCount = await call('frappe.client.get_count', { doctype: 'Task', filters: { pulse_sprint: s.name } }).catch(() => 0)
-  }
+  const list = await call('pulse.api.spa.list_sprints').catch(() => [])
+  for (const s of list) s.taskCount = s.task_count
   sprints.value = list
   loading.value = false
 }

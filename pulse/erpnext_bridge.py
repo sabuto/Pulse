@@ -39,9 +39,13 @@ CUSTOM_FIELDS = {
          "insert_after": "pulse_rank"},
         {"fieldname": "pulse_recurring", "label": "Recurring Template", "fieldtype": "Link",
          "options": "Pulse Recurring Task", "read_only": 1, "insert_after": "pulse_release"},
+        # "What was done", optionally typed when a card is moved to Done; goes in the
+        # completion email.
+        {"fieldname": "pulse_resolution", "label": "Resolution", "fieldtype": "Small Text",
+         "insert_after": "pulse_recurring"},
         # Bug report details, filled by pulse.api.bugs.report_bug (empty on other tasks).
         {"fieldname": "pulse_bug_section", "label": "Bug Report", "fieldtype": "Section Break",
-         "collapsible": 1, "insert_after": "pulse_recurring"},
+         "collapsible": 1, "insert_after": "pulse_resolution"},
         {"fieldname": "pulse_reported_by", "label": "Reported By", "fieldtype": "Link",
          "options": "User", "read_only": 1, "insert_after": "pulse_bug_section"},
         {"fieldname": "pulse_environment", "label": "Environment", "fieldtype": "Select",

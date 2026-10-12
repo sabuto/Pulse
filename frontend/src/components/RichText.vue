@@ -5,6 +5,7 @@
       :editable="editable"
       :placeholder="placeholder"
       :upload-args="uploadArgs"
+      :upload-function="uploadFunction || undefined"
       editor-class="prose-sm max-w-none"
       @change="onChange"
     />
@@ -25,6 +26,8 @@ const props = defineProps({
   placeholder: { type: String, default: '' },
   compact: { type: Boolean, default: false },
   editable: { type: Boolean, default: true },
+  // Custom image upload (file => Promise<{file_url, ...}>); default is Frappe's upload_file.
+  uploadFunction: { type: Function, default: null },
 })
 const emit = defineEmits(['update:modelValue', 'commit'])
 
@@ -60,6 +63,7 @@ function onFocusOut(e) {
 }
 .rt.rt-compact .ProseMirror { min-height: 4.5rem; }
 .rt .ProseMirror:focus { border-color: var(--accent); }
+.rt .ProseMirror[contenteditable="false"] { border-color: transparent; background: transparent; padding-left: 0; min-height: 0; }
 .rt .ProseMirror p { margin: 0 0 0.4rem; }
 .rt .ProseMirror p.is-editor-empty:first-child::before { color: var(--text-faint, #7b8496); }
 .rt .ProseMirror img, .rt-content img { max-width: 100%; height: auto; border-radius: 0.375rem; }

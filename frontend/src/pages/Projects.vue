@@ -2,7 +2,7 @@
   <div class="p-6">
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-2xl font-bold">Projects</h1>
-      <button @click="openEntity('Project')" class="btn-primary">
+      <button v-if="canWrite" @click="openEntity('Project')" class="btn-primary">
         <Plus class="w-3.5 h-3.5" /> New project
       </button>
     </div>
@@ -34,6 +34,7 @@
 
 <script setup>
 import { ref, watch, onMounted } from 'vue'
+import { canWrite } from '@/utils/access'
 import { useRouter } from 'vue-router'
 import { call } from 'frappe-ui'
 import StatusPill from '@/ui/StatusPill.vue'
@@ -49,14 +50,8 @@ function goBoard(name) { router.push(`/board?project=${encodeURIComponent(name)}
 
 async function reload() {
   loading.value = true
-  const list = await call('frappe.client.get_list', {
-    doctype: 'Project',
-    fields: ['name', 'project_name', 'status', 'notes', 'pulse_project_key'],
-    limit_page_length: 0,
-  }).catch(() => [])
-  for (const p of list) {
-    p.taskCount = await call('frappe.client.get_count', { doctype: 'Task', filters: { project: p.name } }).catch(() => 0)
-  }
+  const list = await call('pulse.api.spa.get_projects').catch(() => [])
+  for (const p of list) p.taskCount = p.task_count
   projects.value = list
   loading.value = false
 }

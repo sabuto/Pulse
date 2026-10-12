@@ -13,36 +13,36 @@
           <div v-for="f in fields" :key="f.fieldname" class="fld">
             <span class="lbl">{{ f.label }}<b v-if="f.reqd" style="color:var(--accent)"> *</b></span>
 
-            <textarea v-if="isText(f)" v-model="model[f.fieldname]" rows="3" class="in" :placeholder="f.description || ''" />
+            <textarea v-if="isText(f)" v-model="model[f.fieldname]" rows="3" :disabled="!canWrite" class="in" :placeholder="f.description || ''" />
 
-            <select v-else-if="f.fieldtype === 'Select'" v-model="model[f.fieldname]" class="in">
+            <select v-else-if="f.fieldtype === 'Select'" v-model="model[f.fieldname]" :disabled="!canWrite" class="in">
               <option v-for="o in selOpts(f)" :key="o" :value="o">{{ o || '—' }}</option>
             </select>
 
-            <select v-else-if="f.fieldtype === 'Link'" v-model="model[f.fieldname]" class="in">
+            <select v-else-if="f.fieldtype === 'Link'" v-model="model[f.fieldname]" :disabled="!canWrite" class="in">
               <option :value="null">— none —</option>
               <option v-for="o in (linkCache[f.options] || [])" :key="o.value" :value="o.value">{{ o.label }}</option>
             </select>
 
             <label v-else-if="f.fieldtype === 'Check'" class="chk">
-              <input type="checkbox" :checked="!!model[f.fieldname]" @change="model[f.fieldname] = $event.target.checked ? 1 : 0" />
+              <input type="checkbox" :disabled="!canWrite" :checked="!!model[f.fieldname]" @change="model[f.fieldname] = $event.target.checked ? 1 : 0" />
               <span class="text-xs text-muted">{{ f.description || 'Yes' }}</span>
             </label>
 
-            <input v-else-if="f.fieldtype === 'Date'" type="date" v-model="model[f.fieldname]" class="in" />
-            <input v-else-if="f.fieldtype === 'Datetime'" type="datetime-local" v-model="model[f.fieldname]" class="in" />
-            <input v-else-if="isNumber(f)" type="number" v-model="model[f.fieldname]" class="in" />
-            <input v-else v-model="model[f.fieldname]" class="in" :placeholder="f.description || ''" />
+            <input v-else-if="f.fieldtype === 'Date'" type="date" v-model="model[f.fieldname]" :disabled="!canWrite" class="in" />
+            <input v-else-if="f.fieldtype === 'Datetime'" type="datetime-local" v-model="model[f.fieldname]" :disabled="!canWrite" class="in" />
+            <input v-else-if="isNumber(f)" type="number" v-model="model[f.fieldname]" :disabled="!canWrite" class="in" />
+            <input v-else v-model="model[f.fieldname]" :disabled="!canWrite" class="in" :placeholder="f.description || ''" />
           </div>
           <div v-if="!fields.length" class="text-sm text-muted py-4 text-center">Nothing to edit.</div>
         </div>
 
         <div class="foot">
-          <button v-if="entityState.name" class="btn danger" @click="remove" :disabled="busy">Delete</button>
+          <button v-if="canWrite && entityState.name" class="btn danger" @click="remove" :disabled="busy">Delete</button>
           <span v-else />
           <div class="flex gap-2">
-            <button class="btn ghost" @click="close">Cancel</button>
-            <button class="btn primary" :disabled="!valid || busy" @click="save">{{ busy ? 'Saving…' : 'Save' }}</button>
+            <button class="btn ghost" @click="close">{{ canWrite ? 'Cancel' : 'Close' }}</button>
+            <button v-if="canWrite" class="btn primary" :disabled="!valid || busy" @click="save">{{ busy ? 'Saving…' : 'Save' }}</button>
           </div>
         </div>
       </div>
@@ -52,6 +52,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
+import { canWrite } from '@/utils/access'
 import { call } from 'frappe-ui'
 import { entityState, closeEntity, markSaved } from '@/ui/entity'
 import { toast } from '@/ui/toast'

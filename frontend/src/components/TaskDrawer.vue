@@ -9,25 +9,25 @@
             <button class="text-muted hover:text-app" @click="$emit('close')">Close</button>
           </div>
 
-          <input v-model="task.subject" @change="save('subject', task.subject)"
+          <input v-model="task.subject" @change="save('subject', task.subject)" :readonly="!canWrite"
             class="mt-2 w-full text-lg font-semibold bg-transparent outline-none border-b border-transparent focus:border-app" />
 
           <div class="grid grid-cols-2 gap-3 mt-4 text-sm">
             <label class="block">
               <span class="text-xs text-muted">Type</span>
-              <select v-model="task.task_type" @change="save('task_type', task.task_type)" class="field">
+              <select v-model="task.task_type" @change="save('task_type', task.task_type)" :disabled="!canWrite" class="field">
                 <option v-for="t in issueTypes" :key="t" :value="t">{{ t }}</option>
               </select>
             </label>
             <label class="block">
               <span class="text-xs text-muted">Priority</span>
-              <select v-model="task.priority" @change="save('priority', task.priority)" class="field">
+              <select v-model="task.priority" @change="save('priority', task.priority)" :disabled="!canWrite" class="field">
                 <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
               </select>
             </label>
             <label class="block">
               <span class="text-xs text-muted">Due date</span>
-              <input type="date" v-model="task.exp_end_date" @change="save('exp_end_date', task.exp_end_date)" class="field" />
+              <input type="date" v-model="task.exp_end_date" @change="save('exp_end_date', task.exp_end_date)" :disabled="!canWrite" class="field" />
             </label>
           </div>
 
@@ -35,7 +35,7 @@
           <div class="grid grid-cols-2 gap-3 mt-3 text-sm">
             <label class="block">
               <span class="text-xs text-muted">Epic</span>
-              <select v-model="task.pulse_epic" @change="save('pulse_epic', task.pulse_epic)" class="field">
+              <select v-model="task.pulse_epic" @change="save('pulse_epic', task.pulse_epic)" :disabled="!canWrite" class="field">
                 <option :value="null">— none —</option>
                 <option v-for="e in epics" :key="e.name" :value="e.name">
                   {{ e.issue_key ? e.issue_key + ' · ' : '' }}{{ e.subject }}
@@ -45,7 +45,7 @@
             <label class="block">
               <span class="text-xs text-muted">Release</span>
               <input v-model="task.pulse_release" list="pulse-releases" placeholder="e.g. v1.2"
-                @change="save('pulse_release', task.pulse_release)" class="field" />
+                @change="save('pulse_release', task.pulse_release)" :readonly="!canWrite" class="field" />
               <datalist id="pulse-releases">
                 <option v-for="r in releases" :key="r.release_name" :value="r.release_name" />
               </datalist>
@@ -54,9 +54,16 @@
 
           <div class="mt-4">
             <span class="text-xs text-muted">Description</span>
-            <RichText :key="task.name" v-model="task.description" :task-name="task.name"
-              placeholder="Add a description — paste images straight in"
+            <RichText :key="task.name" v-model="task.description" :task-name="task.name" :editable="canWrite"
+              :placeholder="canWrite ? 'Add a description — paste images straight in' : ''"
               @commit="save('description', task.description)" />
+          </div>
+
+          <!-- Resolution: what was done (also in the completion email) -->
+          <div v-if="task.workflow_state === 'Done' || task.resolution" class="mt-4">
+            <span class="text-xs text-muted">Resolution — what was done</span>
+            <textarea v-model="task.resolution" @change="save('pulse_resolution', task.resolution)"
+              rows="3" :readonly="!canWrite" class="field resize-y" placeholder="Optional" />
           </div>
 
           <!-- Bug report details (only on tasks raised via Report Bug) -->
@@ -84,9 +91,9 @@
             <div class="flex flex-wrap items-center gap-1.5">
               <span v-for="a in task.assignees" :key="a" class="flex items-center gap-1 pill text-xs pl-2 pr-1 py-0.5">
                 {{ a.replace(/@.*/, '') }}
-                <button @click="unassign(a)" class="hover:opacity-70">x</button>
+                <button v-if="canWrite" @click="unassign(a)" class="hover:opacity-70">x</button>
               </span>
-              <select @change="assign($event)" class="text-xs border border-app bg-surface-2 text-app rounded-md px-1.5 py-1">
+              <select v-if="canWrite" @change="assign($event)" class="text-xs border border-app bg-surface-2 text-app rounded-md px-1.5 py-1">
                 <option value="">+ assign</option>
                 <option v-for="u in assignable" :key="u.name" :value="u.name">{{ u.full_name || u.name }}</option>
               </select>
@@ -114,7 +121,7 @@
           <div class="mt-5">
             <div class="text-xs text-muted mb-1.5 flex items-center justify-between">
               <span>Attachments</span>
-              <label class="btn cursor-pointer">
+              <label v-if="canWrite" class="btn cursor-pointer">
                 <input type="file" class="hidden" @change="uploadFile" :disabled="uploading" />
                 {{ uploading ? 'Uploading…' : 'Attach' }}
               </label>
@@ -123,7 +130,7 @@
               <Paperclip class="w-3.5 h-3.5 text-faint shrink-0" />
               <a :href="f.file_url" target="_blank" class="truncate flex-1 hover:underline" style="color:var(--accent)">{{ f.file_name }}</a>
               <span class="text-[10px] text-faint">{{ fmtSize(f.file_size) }}</span>
-              <button class="text-faint hover:text-app" @click="removeAttachment(f.name)"><X class="w-3 h-3" /></button>
+              <button v-if="canWrite" class="text-faint hover:text-app" @click="removeAttachment(f.name)"><X class="w-3 h-3" /></button>
             </div>
             <div v-if="!attachments.length" class="text-xs text-faint py-1">No files attached.</div>
           </div>
@@ -149,7 +156,7 @@
               <span class="text-sm flex-1 truncate" :class="s.status === 'Completed' ? 'line-through text-muted' : ''">{{ s.subject }}</span>
               <StatusPill :value="s.status" />
             </div>
-            <div class="flex gap-2 mt-1.5">
+            <div v-if="canWrite" class="flex gap-2 mt-1.5">
               <input v-model="newSub" @keyup.enter="addSub" placeholder="Add sub-task…" class="field flex-1" />
               <button class="btn" @click="addSub">Add</button>
             </div>
@@ -162,9 +169,9 @@
               <span class="mono text-[10px] text-faint">{{ b.issue_key }}</span>
               <span class="text-sm flex-1 truncate">{{ b.subject }}</span>
               <StatusPill :value="b.status" />
-              <button class="text-faint hover:text-app" @click="removeDep(b.dep)"><X class="w-3 h-3" /></button>
+              <button v-if="canWrite" class="text-faint hover:text-app" @click="removeDep(b.dep)"><X class="w-3 h-3" /></button>
             </div>
-            <div class="relative mt-1.5">
+            <div v-if="canWrite" class="relative mt-1.5">
               <input v-model="depQ" @input="searchDeps" placeholder="Add a blocker (search tasks)…" class="field w-full" />
               <div v-if="depResults.length" class="absolute z-10 left-0 right-0 mt-1 rounded-md border border-app bg-surface shadow-app max-h-44 overflow-y-auto">
                 <button v-for="r in depResults" :key="r.name" class="w-full text-left px-2.5 py-1.5 hover-app text-sm flex items-center gap-2" @click="addDep(r)">
@@ -178,10 +185,10 @@
           <div class="mt-5">
             <div class="text-xs text-muted mb-1">Checklist</div>
             <div v-for="c in task.checklist" :key="c.name" class="flex items-center gap-2 py-0.5">
-              <input type="checkbox" :checked="c.is_done" @change="toggleCheck(c)" />
+              <input type="checkbox" :checked="c.is_done" :disabled="!canWrite" @change="toggleCheck(c)" />
               <span :class="c.is_done ? 'line-through text-muted' : ''" class="text-sm">{{ c.item }}</span>
             </div>
-            <div class="flex gap-2 mt-1">
+            <div v-if="canWrite" class="flex gap-2 mt-1">
               <input v-model="newCheck" @keyup.enter="addCheck" placeholder="Add item..." class="field flex-1" />
               <button class="btn" @click="addCheck">Add</button>
             </div>
@@ -190,13 +197,15 @@
           <!-- Comments -->
           <div class="mt-5">
             <div class="text-xs text-muted mb-1">Comments</div>
+            <div v-if="!task.comments.length && !task.can_comment" class="text-xs text-faint py-1">No comments.</div>
             <div v-for="c in task.comments" :key="c.name" class="text-sm border-l-2 border-app pl-2 py-1">
               <div class="text-app rt-content break-words" v-html="toHtml(c.comment_text)" />
               <div class="text-[10px] text-muted">{{ c.owner }}</div>
             </div>
-            <div class="flex gap-2 mt-1">
+            <div v-if="task.can_comment" class="flex gap-2 mt-1">
               <div class="flex-1 min-w-0" @keydown.ctrl.enter="postComment" @keydown.meta.enter="postComment">
                 <RichText :key="`c-${task.name}-${commentKey}`" v-model="newComment" :task-name="task.name" compact
+                  :upload-function="uploadComment"
                   placeholder="Write a comment — paste images straight in (Ctrl+Enter to send)" />
               </div>
               <button class="btn self-start" @click="postComment">Send</button>
@@ -217,6 +226,7 @@ import StatusPill from '@/ui/StatusPill.vue'
 import RichText from '@/components/RichText.vue'
 import { toHtml, isEmptyHtml } from '@/utils/richtext'
 import { deskUrl } from '@/utils/desk'
+import { commentImageUploader } from '@/utils/upload'
 import X from '~icons/lucide/x'
 import Paperclip from '~icons/lucide/paperclip'
 
@@ -224,6 +234,11 @@ const props = defineProps({ taskId: { type: String, default: null } })
 const emit = defineEmits(['close', 'changed', 'open'])
 
 const task = ref(null)
+
+// Pulse Viewer is read-only: the server refuses writes, and here every control that
+// would change something is hidden or locked. (`can_write` comes from the /pulse page.)
+const canWrite = window.can_write !== false
+const uploadComment = computed(() => commentImageUploader(task.value?.name))
 
 const bugRows = computed(() => {
   const b = task.value?.bug || {}
@@ -310,7 +325,7 @@ watch(() => props.taskId, async (id) => {
     call('pulse.api.spa.get_task', { task: id }),
     assignable.value.length ? Promise.resolve(assignable.value) : call('pulse.api.spa.get_assignable_users'),
     issueTypes.value.length ? Promise.resolve(issueTypes.value)
-      : call('frappe.client.get_list', { doctype: 'Task Type', fields: ['name'], limit_page_length: 0 }).then(r => r.map(x => x.name)),
+      : call('pulse.api.spa.get_task_types'),
   ])
   task.value = t
   assignable.value = users
@@ -394,6 +409,8 @@ async function removeDep(dep) {
 <style scoped>
 .field { width: 100%; margin-top: 0.125rem; font-size: 0.875rem; border: 1px solid var(--border); border-radius: 0.375rem; padding: 0.25rem 0.5rem; outline: none; background: var(--surface-2); color: var(--text); }
 .field:focus { border-color: var(--accent); }
+.field:disabled, .field[readonly] { opacity: 0.8; cursor: default; border-color: transparent; background: transparent; padding-left: 0; }
+.field:disabled { appearance: none; }
 .btn { font-size: 0.8125rem; padding: 0.35rem 0.85rem; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn:hover { filter: brightness(1.06); }
 .slide-enter-active, .slide-leave-active { transition: opacity 0.15s; }
