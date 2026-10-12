@@ -17,6 +17,12 @@ node_modules/
 frontend/dist/
 .vite/
 
+# Built Vue app: `bench build --app pulse` (via package.json -> frontend) regenerates all
+# of this on every deploy. www/pulse.html is part of the build output (it names the
+# hashed asset files), so it is ignored too.
+pulse/public/frontend/
+pulse/www/pulse.html
+
 # ---- MCP server ----
 mcp/.venv/
 

@@ -1,7 +1,9 @@
 <template>
   <transition name="slide">
-    <div v-if="taskId" class="fixed inset-0 z-40 flex justify-end" @click.self="$emit('close')">
-      <div class="absolute inset-0 bg-black/40" />
+    <div v-if="taskId" class="fixed inset-0 z-40 flex justify-end">
+      <!-- Click outside the drawer to close it. It's the backdrop's own click (not the
+           wrapper's) so dragging a text selection out of the drawer doesn't close it. -->
+      <div class="absolute inset-0 bg-black/40" @click="$emit('close')" />
       <aside class="relative w-[800px] max-w-full h-full bg-surface text-app border-l border-app shadow-2xl overflow-y-auto">
         <div v-if="task" class="p-5">
           <div class="flex items-center justify-between">
