@@ -274,8 +274,11 @@ function realtimeSite() {
   return window.sitename || location.hostname
 }
 function realtimeUrl() {
-  const port = window.socketio_port || 9000
-  return `${location.protocol}//${location.hostname}:${port}/${realtimeSite()}`
+  // Dev servers expose socket.io on their own port; in production it is proxied on the
+  // page's own origin (the server sends no port), so the browser never touches :9000.
+  const port = window.socketio_port
+  const host = port ? `${location.protocol}//${location.hostname}:${port}` : location.origin
+  return `${host}/${realtimeSite()}`
 }
 
 function connectRealtime() {

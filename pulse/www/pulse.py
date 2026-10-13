@@ -34,7 +34,11 @@ def get_context(context):
         "can_write": has_pulse_write(),
         # realtime: the SPA connects to socket.io on this port, in a namespace
         # named after the site (Frappe's socketio rejects any other namespace).
-        "socketio_port": frappe.conf.get("socketio_port") or 9000,
+        # Only a dev server exposes socket.io on its own port. In production nginx serves it
+        # on the main domain (/socket.io), and the port isn't open to browsers: leaving it
+        # None makes the SPA connect to the page's own origin.
+        "socketio_port": (frappe.conf.get("socketio_port") or 9000)
+        if (frappe.conf.get("developer_mode") or getattr(frappe, "_dev_server", False)) else None,
     }
     frappe.db.commit()
     return context

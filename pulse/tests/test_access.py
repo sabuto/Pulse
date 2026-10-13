@@ -79,3 +79,15 @@ class TestPulseAccess(IntegrationTestCase):
         self.assertTrue(has_pulse_write("pulse-intern@example.com"))
         self.assertFalse(has_pulse_write(VIEWER))
         self.assertFalse(has_pulse_write(PLAIN))
+
+    def test_socketio_port_only_exposed_on_a_dev_server(self):
+        from pulse.www.pulse import get_context
+        frappe.set_user("Administrator")
+        original = frappe.conf.get("developer_mode")
+        try:
+            frappe.conf.developer_mode = 0
+            self.assertIsNone(get_context(frappe._dict()).boot["socketio_port"])
+            frappe.conf.developer_mode = 1
+            self.assertTrue(get_context(frappe._dict()).boot["socketio_port"])
+        finally:
+            frappe.conf.developer_mode = original
