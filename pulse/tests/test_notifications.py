@@ -14,6 +14,7 @@ REPORTER = "pulse-n-reporter@example.com"    # no Pulse role: reported the bug
 ASSIGNEE = "pulse-n-assignee@example.com"    # Pulse member of the project
 OUTSIDE = "pulse-n-outside@example.com"      # Pulse Viewer, NOT on the project, assigned
 COMMENTER = "pulse-n-commenter@example.com"  # Pulse member who commented
+WATCHER = "pulse-n-watcher@example.com"      # no Pulse role, not assigned: just follows it
 ACTOR = "pulse-n-actor@example.com"          # Manager who makes the changes
 
 
@@ -37,6 +38,7 @@ class TestNotifications(IntegrationTestCase):
         _make_user(ASSIGNEE, ["Pulse Senior Developer"])
         _make_user(OUTSIDE, ["Pulse Viewer"])
         _make_user(COMMENTER, ["Pulse Senior Developer"])
+        _make_user(WATCHER, ["Sales User"])
         _make_user(ACTOR, ["Pulse Manager", "Projects User"])  # Projects User can write Tasks
         self.project_existed = bool(frappe.db.exists("Project", {"project_name": bugs.BUG_PROJECT_NAME}))
         frappe.cache.delete(bugs._rate_limit_key(REPORTER))
@@ -108,6 +110,22 @@ class TestNotifications(IntegrationTestCase):
         self.assertIn("Moved to In Progress", mail["subject"])
         self.assertIn("Printer on fire", mail["message"])
         self.assertIn("In Progress", mail["message"])
+
+    def test_watchers_get_updates_and_can_be_removed(self):
+        spa.watch_task(self.task, WATCHER)
+        spa.watch_task(self.task, WATCHER)  # idempotent
+        self.assertEqual(spa.get_task(self.task)["watchers"], [WATCHER])
+        self.assertNotIn(WATCHER, frappe.parse_json(frappe.db.get_value("Task", self.task, "_assign")))
+
+        sent = self._as_actor(lambda: spa.update_task_state(self.task, "In Progress"))
+        self.assertEqual(set(sent), {REPORTER, ASSIGNEE, OUTSIDE, COMMENTER, WATCHER})
+        self.assertIn("are watching it", sent[WATCHER]["message"])
+        self.assertNotIn("Open in Pulse", sent[WATCHER]["message"])  # no Pulse role
+        self.assertNotIn("Assigned to</td><td style=\"padding:2px 0\">pulse-n-watcher", sent[WATCHER]["message"])
+
+        spa.unwatch_task(self.task, WATCHER)
+        sent = self._as_actor(lambda: spa.update_task_state(self.task, "In Review"))
+        self.assertNotIn(WATCHER, sent)
 
     def test_link_only_for_people_who_can_open_the_task(self):
         sent = self._as_actor(lambda: spa.update_task_state(self.task, "In Progress"))

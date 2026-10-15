@@ -71,6 +71,9 @@ CUSTOM_FIELDS = {
          "read_only": 1, "insert_after": "pulse_steps"},
         {"fieldname": "pulse_actual", "label": "Actual Result", "fieldtype": "Small Text",
          "read_only": 1, "insert_after": "pulse_expected"},
+        # People who get the task's update emails without being assigned to it.
+        {"fieldname": "pulse_watchers", "label": "Watchers", "fieldtype": "Table",
+         "options": "Pulse Task Watcher", "insert_after": "pulse_actual"},
     ],
     "Project": [
         {"fieldname": "pulse_project_key", "label": "Project Key", "fieldtype": "Data",

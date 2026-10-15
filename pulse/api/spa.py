@@ -395,6 +395,7 @@ def get_task(task):
         "can_comment": can_comment(doc.name),
         "bug": _bug_details(doc),
         "assignees": _assignees(doc._assign),
+        "watchers": _watchers(doc.name),
         "checklist": checklist, "comments": comments,
         "subtasks": subtasks, "blocked_by": blocked_by, "parent": parent,
     }
@@ -515,6 +516,52 @@ def unassign_task(task, user):
     remove("Task", task, user)
     frappe.db.commit()
     return {"assignees": _assignees(frappe.db.get_value("Task", task, "_assign"))}
+
+
+def _watchers(task):
+    return frappe.get_all("Pulse Task Watcher", filters={"parent": task, "parenttype": "Task"},
+                          pluck="user", order_by="idx asc")
+
+
+@frappe.whitelist()
+@pulse_write_required
+def watch_task(task, user):
+    """Add a user who gets the task's update emails without being assigned to it.
+
+    Unlike assigning, this skips the role hierarchy and the Pulse-role requirement: a
+    watcher only reads emails and doesn't count towards anyone's workload.
+    """
+    require_task_view(task)
+    if not frappe.db.get_value("User", {"name": user, "enabled": 1}):
+        frappe.throw(_("{0} is not an enabled user.").format(user))
+    if user not in _watchers(task):
+        frappe.get_doc({"doctype": "Pulse Task Watcher", "parent": task, "parenttype": "Task",
+                        "parentfield": "pulse_watchers", "user": user}).insert(ignore_permissions=True)
+        from pulse.api.audit import log
+        key = frappe.db.get_value("Task", task, "issue_key") or task
+        log("Task Updated", "Task", key, frappe.db.get_value("Task", task, "project"),
+            f"Added watcher {user}")
+        frappe.db.commit()
+    return {"watchers": _watchers(task)}
+
+
+@frappe.whitelist()
+@pulse_write_required
+def unwatch_task(task, user):
+    require_task_view(task)
+    frappe.db.delete("Pulse Task Watcher", {"parent": task, "parenttype": "Task", "user": user})
+    frappe.db.commit()
+    return {"watchers": _watchers(task)}
+
+
+@frappe.whitelist()
+@pulse_access_required
+def get_watchable_users():
+    """Everyone who can be added as a watcher: any enabled user, Pulse role or not."""
+    return frappe.get_all(
+        "User", filters={"enabled": 1, "user_type": "System User",
+                         "name": ["not in", ["Administrator", "Guest"]]},
+        fields=["name", "full_name"], order_by="full_name asc", limit_page_length=0)
 
 
 def can_comment(task, user=None):

@@ -109,6 +109,21 @@
             </div>
           </div>
 
+          <!-- Watchers: get update emails without being assigned -->
+          <div class="mt-5">
+            <div class="text-xs text-muted mb-1">Watchers <span class="opacity-70">(get update emails)</span></div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span v-for="w in task.watchers" :key="w" class="flex items-center gap-1 pill text-xs pl-2 pr-1 py-0.5">
+                {{ w.replace(/@.*/, '') }}
+                <button v-if="canWrite" @click="removeWatcher(w)" class="hover:opacity-70">x</button>
+              </span>
+              <select v-if="canWrite" @change="addWatcher($event)" class="text-xs border border-app bg-surface-2 text-app rounded-md px-1.5 py-1">
+                <option value="">+ watch</option>
+                <option v-for="u in watchable.filter(u => !task.watchers.includes(u.name))" :key="u.name" :value="u.name">{{ u.full_name || u.name }}</option>
+              </select>
+            </div>
+          </div>
+
           <!-- Time tracked -->
           <div class="mt-5">
             <div class="text-xs text-muted mb-1.5 flex items-center justify-between">
@@ -271,6 +286,7 @@ const bugTexts = computed(() => {
   ].filter((r) => r.value)
 })
 const assignable = ref([])
+const watchable = ref([])
 const issueTypes = ref([])
 const newCheck = ref('')
 const newComment = ref('')
@@ -342,14 +358,16 @@ function fmtSize(b) {
 watch(() => props.taskId, async (id) => {
   task.value = null
   if (!id) return
-  const [t, users, types] = await Promise.all([
+  const [t, users, types, watchers] = await Promise.all([
     call('pulse.api.spa.get_task', { task: id }),
     assignable.value.length ? Promise.resolve(assignable.value) : call('pulse.api.spa.get_assignable_users'),
     issueTypes.value.length ? Promise.resolve(issueTypes.value)
       : call('pulse.api.spa.get_task_types'),
+    watchable.value.length ? Promise.resolve(watchable.value) : call('pulse.api.spa.get_watchable_users'),
   ])
   task.value = t
   assignable.value = users
+  watchable.value = watchers
   issueTypes.value = types
   loadTime(id)
   loadAttachments(id)
@@ -381,6 +399,20 @@ async function unassign(user) {
   const r = await call('pulse.api.spa.unassign_task', { task: props.taskId, user })
   task.value.assignees = r.assignees
   emit('changed')
+}
+async function addWatcher(e) {
+  const user = e.target.value
+  e.target.value = ''
+  if (!user) return
+  try {
+    const r = await call('pulse.api.spa.watch_task', { task: props.taskId, user })
+    task.value.watchers = r.watchers
+    toast.success(`${user.split('@')[0]} will get updates`)
+  } catch (e2) { toast.error(e2?.messages?.[0] || 'Could not add watcher') }
+}
+async function removeWatcher(user) {
+  const r = await call('pulse.api.spa.unwatch_task', { task: props.taskId, user })
+  task.value.watchers = r.watchers
 }
 async function addCheck() {
   if (!newCheck.value) return

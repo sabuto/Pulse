@@ -1,7 +1,7 @@
 """Email notifications for Pulse tasks: status moves, comments and completion.
 
-Three kinds, all sent to the task's watchers (the reporter, the assignees and anyone
-who has commented) except the person who made the change:
+Three kinds, all sent to the task's watchers (the reporter, the assignees, anyone
+who has commented and anyone watching it) except the person who made the change:
 
 - update:  a card moved to a new state
 - comment: someone commented
@@ -88,6 +88,9 @@ def task_watchers(task, actor=None, assignees=()):
     add(row.get("pulse_reported_by") or row.get("owner"), "reported it")
     for user in [*(frappe.parse_json(row.get("_assign") or "[]") or []), *assignees]:
         add(user, "are assigned to it")
+    for user in frappe.get_all("Pulse Task Watcher", filters={"parent": task, "parenttype": "Task"},
+                               pluck="user"):
+        add(user, "are watching it")
     for user in frappe.get_all("Pulse Comment", filters={"task": task, "is_deleted": 0},
                                pluck="owner", distinct=True):
         add(user, "commented on it")
